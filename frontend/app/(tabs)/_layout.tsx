@@ -2,8 +2,12 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS } from '../../constants/theme';
+import { useAuthStore } from '../../store/authStore';
 
 export default function TabsLayout() {
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.is_admin || false;
+
   return (
     <Tabs
       screenOptions={{
@@ -52,6 +56,17 @@ export default function TabsLayout() {
           ),
         }}
       />
+      {isAdmin && (
+        <Tabs.Screen
+          name="admin"
+          options={{
+            title: 'Admin',
+            tabBarIcon: ({ color, size }) => (
+              <Ionicons name="shield" size={size} color={color} />
+            ),
+          }}
+        />
+      )}
       <Tabs.Screen
         name="profile"
         options={{

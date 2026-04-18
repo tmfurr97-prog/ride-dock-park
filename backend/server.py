@@ -80,6 +80,11 @@ async def get_current_user(authorization: Optional[str] = Header(None)):
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+async def get_admin_user(current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user
+
 # Pydantic Models
 class UserRegister(BaseModel):
     email: EmailStr
@@ -169,6 +174,8 @@ async def register(user: UserRegister):
         "name": user.name,
         "phone": user.phone,
         "is_verified": False,
+        "is_admin": False,
+        "is_banned": False,
         "created_at": datetime.utcnow().isoformat()
     }
     
@@ -654,6 +661,122 @@ async def get_messages(
         messages.append(msg)
     
     return messages
+
+# =====================
+# ADMIN ENDPOINTS
+# =====================
+@app.get("/api/admin/stats")
+async def get_admin_stats(admin: dict = Depends(get_admin_user)):
+    total_users = await db.users.count_documents({})
+    verified_users = await db.users.count_documents({"is_verified": True})
+    total_listings = await db.listings.count_documents({"status": "active"})
+    total_bookings = await db.bookings.count_documents({})
+    
+    # Calculate total revenue from verification payments
+    pipeline = [
+        {"$match": {"type": "verification", "payment_status": "paid"}},
+        {"$group": {"_id": None, "total": {"$sum": "$amount"}}}
+    ]
+    revenue_result = await db.payment_transactions.aggregate(pipeline).to_list(1)
+    total_revenue = revenue_result[0]["total"] if revenue_result else 0
+    
+    # Recent users (last 7 days)
+    seven_days_ago = (datetime.utcnow() - timedelta(days=7)).isoformat()
+    recent_users = await db.users.count_documents({"created_at": {"$gte": seven_days_ago}})
+    
+    return {
+        "total_users": total_users,
+        "verified_users": verified_users,
+        "total_listings": total_listings,
+        "total_bookings": total_bookings,
+        "total_revenue": total_revenue,
+        "recent_users": recent_users,
+    }
+
+@app.get("/api/admin/users")
+async def get_all_users(
+    skip: int = 0,
+    limit: int = 50,
+    admin: dict = Depends(get_admin_user)
+):
+    users = []
+    async for user in db.users.find().skip(skip).limit(limit).sort("created_at", -1):
+        user["id"] = str(user["_id"])
+        user.pop("_id", None)
+        user.pop("password", None)
+        users.append(user)
+    
+    total = await db.users.count_documents({})
+    return {"users": users, "total": total}
+
+@app.patch("/api/admin/users/{user_id}/verify")
+async def admin_verify_user(user_id: str, admin: dict = Depends(get_admin_user)):
+    try:
+        result = await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"is_verified": True, "verified_at": datetime.utcnow().isoformat()}}
+        )
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"message": "User verified"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.patch("/api/admin/users/{user_id}/ban")
+async def admin_ban_user(user_id: str, banned: bool, admin: dict = Depends(get_admin_user)):
+    try:
+        result = await db.users.update_one(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"is_banned": banned}}
+        )
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"message": f"User {'banned' if banned else 'unbanned'}"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/admin/listings")
+async def get_all_listings_admin(
+    skip: int = 0,
+    limit: int = 50,
+    admin: dict = Depends(get_admin_user)
+):
+    listings = []
+    async for listing in db.listings.find().skip(skip).limit(limit).sort("created_at", -1):
+        listing["id"] = str(listing["_id"])
+        listing.pop("_id", None)
+        listings.append(listing)
+    
+    total = await db.listings.count_documents({})
+    return {"listings": listings, "total": total}
+
+@app.delete("/api/admin/listings/{listing_id}")
+async def admin_delete_listing(listing_id: str, admin: dict = Depends(get_admin_user)):
+    try:
+        result = await db.listings.update_one(
+            {"_id": ObjectId(listing_id)},
+            {"$set": {"status": "deleted"}}
+        )
+        if result.modified_count == 0:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        return {"message": "Listing deleted"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/admin/payments")
+async def get_all_payments(
+    skip: int = 0,
+    limit: int = 50,
+    admin: dict = Depends(get_admin_user)
+):
+    payments = []
+    async for payment in db.payment_transactions.find().skip(skip).limit(limit).sort("created_at", -1):
+        payment["id"] = str(payment["_id"])
+        payment.pop("_id", None)
+        payments.append(payment)
+    
+    total = await db.payment_transactions.count_documents({})
+    return {"payments": payments, "total": total}
 
 @app.get("/")
 async def root():
