@@ -23,8 +23,8 @@ export default function Verification() {
   const handleVerify = async () => {
     setLoading(true);
     try {
-      // Get origin URL (for success/cancel URLs)
-      const originUrl = 'https://forest-dock.preview.emergentagent.com';
+      // Get origin URL dynamically (works in any environment)
+      const originUrl = process.env.EXPO_PUBLIC_BACKEND_URL?.replace('/api', '') || 'https://forest-dock.preview.emergentagent.com';
 
       const response = await api.post('/api/payments/verification/create-checkout', {
         origin_url: originUrl,

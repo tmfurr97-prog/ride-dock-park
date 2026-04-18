@@ -421,7 +421,12 @@ async def create_listing(
     return new_listing
 
 @app.get("/api/listings")
-async def get_listings(category: Optional[str] = None, search: Optional[str] = None):
+async def get_listings(
+    category: Optional[str] = None, 
+    search: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 50
+):
     query = {"status": {"$in": ["active", "booked"]}}  # Include booked listings for social proof
     
     if category:
@@ -435,7 +440,9 @@ async def get_listings(category: Optional[str] = None, search: Optional[str] = N
         ]
     
     listings = []
-    async for listing in db.listings.find(query).sort("created_at", -1):
+    # Exclude large image arrays for list view performance
+    projection = {"images": {"$slice": 1}}  # Only include first image
+    async for listing in db.listings.find(query, projection).sort("created_at", -1).skip(skip).limit(limit):
         listing["id"] = str(listing["_id"])
         listing.pop("_id", None)
         listings.append(listing)
@@ -456,9 +463,13 @@ async def get_listing(listing_id: str):
         raise HTTPException(status_code=400, detail="Invalid listing ID")
 
 @app.get("/api/listings/user/me")
-async def get_my_listings(current_user: dict = Depends(get_current_user)):
+async def get_my_listings(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 50
+):
     listings = []
-    async for listing in db.listings.find({"owner_id": current_user["_id"]}).sort("created_at", -1):
+    projection = {"images": {"$slice": 1}}  # Only first image for list view
+    async for listing in db.listings.find({"owner_id": current_user["_id"]}, projection).sort("created_at", -1).limit(limit):
         listing["id"] = str(listing["_id"])
         listing.pop("_id", None)
         listings.append(listing)
@@ -540,40 +551,86 @@ async def create_booking(
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/api/bookings/guest")
-async def get_guest_bookings(current_user: dict = Depends(get_current_user)):
+async def get_guest_bookings(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 50
+):
+    # Use aggregation pipeline to join listings in one query (better performance)
+    pipeline = [
+        {"$match": {"guest_id": current_user["_id"]}},
+        {"$sort": {"created_at": -1}},
+        {"$limit": limit},
+        {"$lookup": {
+            "from": "listings",
+            "let": {"listing_id": {"$toObjectId": "$listing_id"}},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$_id", "$$listing_id"]}}},
+                {"$project": {"title": 1, "images": {"$slice": ["$images", 1]}}}
+            ],
+            "as": "listing_info"
+        }},
+        {"$unwind": {"path": "$listing_info", "preserveNullAndEmptyArrays": True}}
+    ]
+    
     bookings = []
-    async for booking in db.bookings.find({"guest_id": current_user["_id"]}).sort("created_at", -1):
-        # Get listing info
-        listing = await db.listings.find_one({"_id": ObjectId(booking["listing_id"])})
-        
+    async for booking in db.bookings.aggregate(pipeline):
         booking["id"] = str(booking["_id"])
         booking.pop("_id", None)
         
-        if listing:
-            booking["listing_title"] = listing["title"]
-            booking["listing_image"] = listing["images"][0] if listing["images"] else None
+        if "listing_info" in booking and booking["listing_info"]:
+            booking["listing_title"] = booking["listing_info"].get("title")
+            booking["listing_image"] = booking["listing_info"]["images"][0] if booking["listing_info"].get("images") else None
+            booking.pop("listing_info", None)
         
         bookings.append(booking)
     
     return bookings
 
 @app.get("/api/bookings/host")
-async def get_host_bookings(current_user: dict = Depends(get_current_user)):
+async def get_host_bookings(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 50
+):
+    # Use aggregation pipeline to join users and listings efficiently
+    pipeline = [
+        {"$match": {"host_id": current_user["_id"]}},
+        {"$sort": {"created_at": -1}},
+        {"$limit": limit},
+        {"$lookup": {
+            "from": "users",
+            "let": {"guest_id": {"$toObjectId": "$guest_id"}},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$_id", "$$guest_id"]}}},
+                {"$project": {"name": 1, "email": 1}}
+            ],
+            "as": "guest_info"
+        }},
+        {"$lookup": {
+            "from": "listings",
+            "let": {"listing_id": {"$toObjectId": "$listing_id"}},
+            "pipeline": [
+                {"$match": {"$expr": {"$eq": ["$_id", "$$listing_id"]}}},
+                {"$project": {"title": 1}}
+            ],
+            "as": "listing_info"
+        }},
+        {"$unwind": {"path": "$guest_info", "preserveNullAndEmptyArrays": True}},
+        {"$unwind": {"path": "$listing_info", "preserveNullAndEmptyArrays": True}}
+    ]
+    
     bookings = []
-    async for booking in db.bookings.find({"host_id": current_user["_id"]}).sort("created_at", -1):
-        # Get guest info
-        guest = await db.users.find_one({"_id": ObjectId(booking["guest_id"])})
-        listing = await db.listings.find_one({"_id": ObjectId(booking["listing_id"])})
-        
+    async for booking in db.bookings.aggregate(pipeline):
         booking["id"] = str(booking["_id"])
         booking.pop("_id", None)
         
-        if guest:
-            booking["guest_name"] = guest["name"]
-            booking["guest_email"] = guest["email"]
+        if "guest_info" in booking and booking["guest_info"]:
+            booking["guest_name"] = booking["guest_info"].get("name")
+            booking["guest_email"] = booking["guest_info"].get("email")
+            booking.pop("guest_info", None)
         
-        if listing:
-            booking["listing_title"] = listing["title"]
+        if "listing_info" in booking and booking["listing_info"]:
+            booking["listing_title"] = booking["listing_info"].get("title")
+            booking.pop("listing_info", None)
         
         bookings.append(booking)
     
@@ -608,8 +665,11 @@ async def send_message(
     return new_message
 
 @app.get("/api/messages/conversations")
-async def get_conversations(current_user: dict = Depends(get_current_user)):
-    # Get all unique conversations
+async def get_conversations(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 50
+):
+    # Get all unique conversations with limit
     pipeline = [
         {"$match": {
             "$or": [
@@ -621,7 +681,8 @@ async def get_conversations(current_user: dict = Depends(get_current_user)):
         {"$group": {
             "_id": "$conversation_id",
             "last_message": {"$first": "$$ROOT"}
-        }}
+        }},
+        {"$limit": limit}
     ]
     
     conversations = []
@@ -648,17 +709,22 @@ async def get_conversations(current_user: dict = Depends(get_current_user)):
 @app.get("/api/messages/{conversation_id}")
 async def get_messages(
     conversation_id: str,
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    limit: int = 200
 ):
     # Verify user is part of conversation
     if current_user["_id"] not in conversation_id:
         raise HTTPException(status_code=403, detail="Not authorized")
     
     messages = []
-    async for msg in db.messages.find({"conversation_id": conversation_id}).sort("timestamp", 1):
+    # Get most recent messages (reversed for chronological order in UI)
+    async for msg in db.messages.find({"conversation_id": conversation_id}).sort("timestamp", -1).limit(limit):
         msg["id"] = str(msg["_id"])
         msg.pop("_id", None)
         messages.append(msg)
+    
+    # Reverse to show oldest first
+    messages.reverse()
     
     return messages
 
@@ -700,10 +766,11 @@ async def get_all_users(
     admin: dict = Depends(get_admin_user)
 ):
     users = []
-    async for user in db.users.find().skip(skip).limit(limit).sort("created_at", -1):
+    # Exclude password from projection for security
+    projection = {"password": 0}
+    async for user in db.users.find({}, projection).skip(skip).limit(limit).sort("created_at", -1):
         user["id"] = str(user["_id"])
         user.pop("_id", None)
-        user.pop("password", None)
         users.append(user)
     
     total = await db.users.count_documents({})
@@ -742,7 +809,9 @@ async def get_all_listings_admin(
     admin: dict = Depends(get_admin_user)
 ):
     listings = []
-    async for listing in db.listings.find().skip(skip).limit(limit).sort("created_at", -1):
+    # Exclude large images for admin list view performance
+    projection = {"images": 0}
+    async for listing in db.listings.find({}, projection).skip(skip).limit(limit).sort("created_at", -1):
         listing["id"] = str(listing["_id"])
         listing.pop("_id", None)
         listings.append(listing)
