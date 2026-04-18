@@ -1,82 +1,82 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-# IDE and editors
-.idea/
-.vscode/
+# Environment Variables (SENSITIVE DATA)
+**/.env
+!**/.env.example
 
 # Dependencies
 node_modules/
-/node_modules
-/.pnp
-.pnp.js
-.yarn/install-state.gz
-.yarn/*
-!.yarn/patches
-!.yarn/plugins
-!.yarn/releases
-!.yarn/versions
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 
-# Testing
-/coverage
+# Python Virtual Environments
+venv/
+env/
+ENV/
+.venv/
 
-# Next.js
-/.next/
-/out/
-next-env.d.ts
-*.tsbuildinfo
-
-# Production builds
-/build
+# Expo / React Native
+.expo/
+.expo-shared/
 dist/
-dist
+npm-debug.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
 
-# Environment files (comprehensive coverage)
+# Metro
+.metro-health-check*
+.metro-cache/
 
-*token.json*
-*credentials.json*
+# OS Files
+.DS_Store
+Thumbs.db
 
-# Logs and debug files
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-.pnpm-debug.log*
-dump.rdb
 
-# System files
-.DS_Store
-*.pem
+# Testing
+coverage/
+.nyc_output/
 
-# Python
-__pycache__/
-*pyc*
-venv/
-.venv/
+# Database
+*.db
+*.sqlite
+*.sqlite3
 
-# Development tools
-chainlit.md
-.chainlit
-.ipynb_checkpoints/
-.ac
-
-# Deployment
-.vercel
-
-# Data and databases
-agenthub/agents/youtube/db
-
-# Archive files and large assets
-**/*.zip
-**/*.tar.gz
-**/*.tar
-**/*.tgz
-*.pack
-*.deb
-*.dylib
-
-# Build caches
+# Temporary Files
+*.tmp
+*.temp
 .cache/
 
-memory/test_credentials.md
+# Build Outputs
+build/
+dist/
+out/
 
-# Mobile development
-android-sdk/
+# Credentials (NEVER COMMIT THESE)
+test_credentials.md
+*.pem
+*.key
+*.crt
+*.cer
+
+# MongoDB
+data/
+mongod.lock
