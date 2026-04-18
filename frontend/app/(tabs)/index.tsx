@@ -78,41 +78,56 @@ export default function Browse() {
     router.push('/create-listing');
   };
 
-  const renderListingCard = ({ item }: any) => (
-    <TouchableOpacity
-      style={styles.card}
-      onPress={() => router.push(`/listing/${item.id}`)}
-    >
-      {item.images && item.images.length > 0 ? (
-        <Image
-          source={{ uri: item.images[0] }}
-          style={styles.cardImage}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={[styles.cardImage, styles.placeholderImage]}>
-          <Ionicons name="image-outline" size={48} color={COLORS.textLight} />
+  const renderListingCard = ({ item }: any) => {
+    const priceUnit = item.category === 'rv_rental' ? 'day' : item.category === 'land_stay' ? 'night' : 'month';
+    const isBooked = item.status === 'booked';
+
+    return (
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => router.push(`/listing/${item.id}`)}
+      >
+        <View style={styles.imageContainer}>
+          {item.images && item.images.length > 0 ? (
+            <Image
+              source={{ uri: item.images[0] }}
+              style={styles.cardImage}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.cardImage, styles.placeholderImage]}>
+              <Ionicons name="image-outline" size={48} color={COLORS.textLight} />
+            </View>
+          )}
+          {isBooked && (
+            <View style={styles.bookedOverlay}>
+              <View style={styles.bookedBadge}>
+                <Ionicons name="checkmark-circle" size={16} color={COLORS.surface} />
+                <Text style={styles.bookedText}>Currently Booked</Text>
+              </View>
+            </View>
+          )}
         </View>
-      )}
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle} numberOfLines={1}>
-          {item.title}
-        </Text>
-        <Text style={styles.cardLocation} numberOfLines={1}>
-          <Ionicons name="location" size={14} color={COLORS.textLight} />
-          {' '}{item.location}
-        </Text>
-        <View style={styles.cardFooter}>
-          <Text style={styles.cardPrice}>${item.price}/day</Text>
-          <View style={styles.categoryBadge}>
-            <Text style={styles.categoryBadgeText}>
-              {item.category === 'rv_rental' ? 'RV' : item.category === 'land_stay' ? 'Land' : 'Storage'}
-            </Text>
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={styles.cardLocation} numberOfLines={1}>
+            <Ionicons name="location" size={14} color={COLORS.textLight} />
+            {' '}{item.location}
+          </Text>
+          <View style={styles.cardFooter}>
+            <Text style={styles.cardPrice}>${item.price}/{priceUnit}</Text>
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryBadgeText}>
+                {item.category === 'rv_rental' ? 'RV' : item.category === 'land_stay' ? 'Land' : 'Storage'}
+              </Text>
+            </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
@@ -265,10 +280,38 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...SHADOWS.medium,
   },
+  imageContainer: {
+    position: 'relative',
+    width: '100%',
+  },
   cardImage: {
     width: '100%',
     height: 200,
     backgroundColor: COLORS.background,
+  },
+  bookedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 20,
+  },
+  bookedText: {
+    color: COLORS.surface,
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   placeholderImage: {
     justifyContent: 'center',

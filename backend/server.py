@@ -422,7 +422,7 @@ async def create_listing(
 
 @app.get("/api/listings")
 async def get_listings(category: Optional[str] = None, search: Optional[str] = None):
-    query = {"status": "active"}
+    query = {"status": {"$in": ["active", "booked"]}}  # Include booked listings for social proof
     
     if category:
         query["category"] = category
