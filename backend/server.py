@@ -629,8 +629,12 @@ async def create_booking(
             })
             add_ons_subtotal += line_total
         
-        # Fetch host for commission tenure
-        host = await db.users.find_one({"_id": ObjectId(listing["owner_id"])})
+        # Fetch host for commission tenure (tolerate non-ObjectId owner_ids on seed data)
+        host = None
+        try:
+            host = await db.users.find_one({"_id": ObjectId(listing["owner_id"])})
+        except Exception:
+            pass
         host_rate = compute_host_commission_rate(host.get("created_at") if host else None)
         
         rental_commission = base_subtotal * host_rate

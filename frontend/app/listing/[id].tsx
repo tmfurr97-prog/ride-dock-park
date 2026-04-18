@@ -107,7 +107,7 @@ export default function ListingDetail() {
 
       const statusMsg =
         response.data.status === 'awaiting_insurance_review'
-          ? '\n\nYour booking is pending the host\\'s insurance approval.'
+          ? "\n\nYour booking is pending the host's insurance approval."
           : '';
 
       Alert.alert(
