@@ -110,6 +110,7 @@ class UserRegister(BaseModel):
     password: str
     name: str
     phone: str
+    accepted_tos: bool = False
 
 class UserLogin(BaseModel):
     email: EmailStr
@@ -152,6 +153,7 @@ class BookingCreate(BaseModel):
     start_date: str
     end_date: str
     selected_add_ons: Optional[List[str]] = []  # e.g., ["golf_cart", "trailer", "bimini_top"]
+    tos_accepted: bool = False
 
 class BookingResponse(BaseModel):
     id: str
@@ -183,11 +185,19 @@ class MessageResponse(BaseModel):
 # =====================
 @app.post("/api/auth/register")
 async def register(user: UserRegister):
+    # Require ToS acceptance
+    if not user.accepted_tos:
+        raise HTTPException(
+            status_code=400,
+            detail="You must agree to the Terms of Service to create an account."
+        )
+    
     # Check if user exists
     existing_user = await db.users.find_one({"email": user.email})
     if existing_user:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    now = datetime.utcnow().isoformat()
     # Create new user
     new_user = {
         "email": user.email,
@@ -197,7 +207,9 @@ async def register(user: UserRegister):
         "is_verified": False,
         "is_admin": False,
         "is_banned": False,
-        "created_at": datetime.utcnow().isoformat()
+        "accepted_tos": True,
+        "tos_accepted_at": now,
+        "created_at": now
     }
     
     result = await db.users.insert_one(new_user)
@@ -429,6 +441,15 @@ async def create_listing(
             detail=f"Invalid category. Must be one of: {', '.join(sorted(allowed_categories))}"
         )
     
+    # RV rentals: proof of insurance required
+    if listing.category == "rv_rental":
+        amen = listing.amenities or {}
+        if not amen.get("insurance_proof"):
+            raise HTTPException(
+                status_code=400,
+                detail="Proof of insurance is required for RV rentals"
+            )
+    
     # Boat rental requires insurance proof, security deposit, and life jackets count
     if listing.category == "boat_rental":
         amen = listing.amenities or {}
@@ -559,6 +580,13 @@ async def create_booking(
     if not current_user.get("is_verified"):
         raise HTTPException(status_code=403, detail="Must be verified to book")
     
+    # Require ToS acceptance for every booking
+    if not booking.tos_accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="You must agree to the Terms of Service to book."
+        )
+    
     # Get listing
     try:
         listing = await db.listings.find_one({"_id": ObjectId(booking.listing_id)})
@@ -616,10 +644,17 @@ async def create_booking(
         total_price = base_subtotal + add_ons_subtotal + security_deposit
         host_payout = (base_subtotal + add_ons_subtotal) - platform_fee_total
         
+        # Insurance gate: RV and Boat rentals must be accepted by host before confirmed
+        category = listing.get("category", "")
+        requires_insurance_review = category in ("rv_rental", "boat_rental")
+        initial_status = "awaiting_insurance_review" if requires_insurance_review else "pending"
+        
         new_booking = {
             "listing_id": booking.listing_id,
             "guest_id": current_user["_id"],
+            "guest_name": current_user["name"],
             "host_id": listing["owner_id"],
+            "category": category,
             "start_date": booking.start_date,
             "end_date": booking.end_date,
             "days": days,
@@ -633,7 +668,11 @@ async def create_booking(
             "platform_fee_total": round(platform_fee_total, 2),
             "host_payout": round(host_payout, 2),
             "total_price": round(total_price, 2),
-            "status": "pending",
+            "status": initial_status,
+            "insurance_required": requires_insurance_review,
+            "insurance_accepted": False,
+            "tos_accepted": True,
+            "tos_accepted_at": datetime.utcnow().isoformat(),
             "created_at": datetime.utcnow().isoformat()
         }
         
@@ -732,6 +771,69 @@ async def get_host_bookings(
         bookings.append(booking)
     
     return bookings
+
+@app.patch("/api/bookings/{booking_id}/accept-insurance")
+async def accept_insurance(
+    booking_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Host accepts the guest's insurance / approves the booking.
+    Only works on bookings in 'awaiting_insurance_review' status, and only
+    the listing host may call it."""
+    try:
+        booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking.get("host_id") != current_user["_id"]:
+        raise HTTPException(status_code=403, detail="Only the host can accept this booking")
+    
+    if booking.get("status") != "awaiting_insurance_review":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Booking is not awaiting insurance review (current status: {booking.get('status')})"
+        )
+    
+    await db.bookings.update_one(
+        {"_id": ObjectId(booking_id)},
+        {"$set": {
+            "insurance_accepted": True,
+            "insurance_accepted_at": datetime.utcnow().isoformat(),
+            "status": "confirmed"
+        }}
+    )
+    return {"message": "Insurance accepted, booking confirmed", "status": "confirmed"}
+
+@app.patch("/api/bookings/{booking_id}/reject-insurance")
+async def reject_insurance(
+    booking_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Host rejects the guest's insurance — booking is cancelled."""
+    try:
+        booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+    
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking.get("host_id") != current_user["_id"]:
+        raise HTTPException(status_code=403, detail="Only the host can reject this booking")
+    
+    await db.bookings.update_one(
+        {"_id": ObjectId(booking_id)},
+        {"$set": {
+            "insurance_accepted": False,
+            "status": "cancelled",
+            "cancelled_at": datetime.utcnow().isoformat(),
+            "cancellation_reason": "insurance_rejected"
+        }}
+    )
+    return {"message": "Insurance rejected, booking cancelled", "status": "cancelled"}
 
 # =====================
 # MESSAGES ENDPOINTS

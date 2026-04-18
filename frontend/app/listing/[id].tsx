@@ -31,6 +31,7 @@ export default function ListingDetail() {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [bookingTosAccepted, setBookingTosAccepted] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
 
   useEffect(() => {
@@ -87,17 +88,35 @@ export default function ListingDetail() {
       return;
     }
 
+    if (!bookingTosAccepted) {
+      Alert.alert(
+        'Terms of Service',
+        'You must agree to the Terms of Service to complete a booking.'
+      );
+      return;
+    }
+
     setBookingLoading(true);
     try {
       const response = await api.post('/api/bookings', {
         listing_id: listing.id,
         start_date: new Date(startDate).toISOString(),
         end_date: new Date(endDate).toISOString(),
+        tos_accepted: true,
       });
 
+      const statusMsg =
+        response.data.status === 'awaiting_insurance_review'
+          ? '\n\nYour booking is pending the host\\'s insurance approval.'
+          : '';
+
       Alert.alert(
-        'Success!',
-        `Booking request sent! Total: $${response.data.total_price.toFixed(2)}`,
+        'Booking Requested!',
+        `Total charged: $${response.data.total_price.toFixed(2)}` +
+          (response.data.security_deposit
+            ? `\n(includes $${response.data.security_deposit} refundable deposit hold)`
+            : '') +
+          statusMsg,
         [
           {
             text: 'View Bookings',
@@ -344,6 +363,41 @@ export default function ListingDetail() {
                 placeholder="2025-07-05"
                 placeholderTextColor={COLORS.textLight}
               />
+
+              <View style={styles.depositNotice}>
+                <Ionicons name="information-circle" size={20} color={COLORS.primary} />
+                <Text style={styles.depositNoticeText}>
+                  Security deposits are held as a pre-authorization and released
+                  48 hours after the rental ends if no damages are reported.
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.tosRow}
+                onPress={() => setBookingTosAccepted(!bookingTosAccepted)}
+                activeOpacity={0.7}
+              >
+                <Ionicons
+                  name={bookingTosAccepted ? 'checkbox' : 'square-outline'}
+                  size={24}
+                  color={COLORS.primary}
+                />
+                <Text style={styles.tosText}>
+                  I agree to the{' '}
+                  <Text
+                    style={styles.tosLink}
+                    onPress={(e) => {
+                      e.stopPropagation?.();
+                      setShowBookingModal(false);
+                      router.push('/legal/terms');
+                    }}
+                  >
+                    Terms of Service
+                  </Text>
+                  , and accept that DriveShare & Dock is a platform provider and
+                  does not provide insurance or legal representation.
+                </Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.submitButton, bookingLoading && styles.buttonDisabled]}
@@ -609,5 +663,44 @@ const styles = StyleSheet.create({
   submitButtonText: {
     ...TYPOGRAPHY.button,
     fontSize: 18,
+  },
+  depositNotice: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    backgroundColor: '#F0F7F0',
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
+    padding: SPACING.md,
+    borderRadius: 6,
+    marginTop: SPACING.lg,
+  },
+  depositNoticeText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.text,
+  },
+  tosRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: COLORS.background,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  tosText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.text,
+  },
+  tosLink: {
+    color: COLORS.primary,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });

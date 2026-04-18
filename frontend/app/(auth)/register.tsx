@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../services/api';
@@ -25,6 +26,7 @@ export default function Register() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [acceptedTos, setAcceptedTos] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
@@ -43,6 +45,14 @@ export default function Register() {
       return;
     }
 
+    if (!acceptedTos) {
+      Alert.alert(
+        'Terms of Service',
+        'You must agree to the Terms of Service to create an account.'
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await api.post('/api/auth/register', {
@@ -50,6 +60,7 @@ export default function Register() {
         email: email.toLowerCase().trim(),
         phone: phone.trim(),
         password,
+        accepted_tos: true,
       });
 
       await setAuth(response.data.token, response.data.user);
@@ -143,6 +154,32 @@ export default function Register() {
                 autoCapitalize="none"
               />
             </View>
+
+            <TouchableOpacity
+              style={styles.tosRow}
+              onPress={() => setAcceptedTos(!acceptedTos)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={acceptedTos ? 'checkbox' : 'square-outline'}
+                size={24}
+                color={COLORS.primary}
+              />
+              <Text style={styles.tosText}>
+                I agree to the{' '}
+                <Text
+                  style={styles.tosLink}
+                  onPress={(e) => {
+                    e.stopPropagation?.();
+                    router.push('/legal/terms');
+                  }}
+                >
+                  Terms of Service
+                </Text>
+                {' '}and acknowledge that DriveShare & Dock is a platform
+                provider and does not provide insurance or legal representation.
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.button, loading && styles.buttonDisabled]}
@@ -244,5 +281,27 @@ const styles = StyleSheet.create({
   linkBold: {
     color: COLORS.primary,
     fontWeight: 'bold',
+  },
+  tosRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    marginTop: SPACING.lg,
+    padding: SPACING.md,
+    backgroundColor: COLORS.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  tosText: {
+    flex: 1,
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.text,
+  },
+  tosLink: {
+    color: COLORS.primary,
+    fontWeight: '700',
+    textDecorationLine: 'underline',
   },
 });

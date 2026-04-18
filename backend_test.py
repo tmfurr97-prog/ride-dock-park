@@ -1,328 +1,453 @@
 """
-Backend tests for DriveShare & Dock — focusing on 3 new tasks:
-1. Boat Rentals & Docks category validation (POST /api/listings)
-2. Booking fee calculation with add-ons + commission (POST /api/bookings)
-3. Seeded boat listing fetchable via GET /api/listings?category=boat_rental
+Backend tests for DriveShare & Dock "Legal Armor" features:
+1. ToS Acceptance on Registration
+2. ToS Acceptance on Booking
+3. RV Listing requires Proof of Insurance
+4. Insurance Gate (awaiting_insurance_review + accept/reject)
+
+Uses public REACT_APP_BACKEND_URL and admin credentials from
+/app/memory/test_credentials.md.
 """
 import os
 import sys
-import json
 import uuid
 import requests
 from datetime import datetime, timedelta
 
-BASE_URL = "https://forest-dock.preview.emergentagent.com/api"
+FRONTEND_ENV = "/app/frontend/.env"
+BACKEND_URL = None
+with open(FRONTEND_ENV) as f:
+    for line in f:
+        line = line.strip()
+        for key in ("REACT_APP_BACKEND_URL=", "EXPO_PUBLIC_BACKEND_URL="):
+            if line.startswith(key):
+                BACKEND_URL = line.split("=", 1)[1].strip().strip('"').strip("'")
+                break
+        if BACKEND_URL:
+            break
+if not BACKEND_URL:
+    print("FATAL: could not read BACKEND_URL from frontend/.env")
+    sys.exit(1)
+
+API = f"{BACKEND_URL.rstrip('/')}/api"
+print(f"API base: {API}")
+
 ADMIN_EMAIL = "admin@driveshare.com"
 ADMIN_PASSWORD = "Admin123!"
 
-results = []  # list of (name, ok, details)
+results = []
 
-
-def log(name, ok, details=""):
+def record(name, ok, detail=""):
+    results.append((name, ok, detail))
     status = "PASS" if ok else "FAIL"
-    print(f"[{status}] {name}" + (f" — {details}" if details else ""))
-    results.append((name, ok, details))
+    print(f"[{status}] {name} :: {detail}")
+
+def uniq_email(prefix="user"):
+    return f"{prefix}+{uuid.uuid4().hex[:10]}@driveshare-test.com"
+
+def auth_headers(token):
+    return {"Authorization": f"Bearer {token}"}
 
 
-def post(path, json_body=None, token=None, params=None):
-    headers = {"Content-Type": "application/json"}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return requests.post(f"{BASE_URL}{path}", json=json_body, headers=headers, params=params, timeout=30)
+# ---------------------------------------------------------------------------
+# 1. ToS Acceptance on Registration
+# ---------------------------------------------------------------------------
+print("\n=== 1. ToS Acceptance on Registration ===")
 
+email_a = uniq_email("reg_notos")
+r = requests.post(f"{API}/auth/register", json={
+    "email": email_a,
+    "password": "StrongPass!23",
+    "name": "Alice Reg",
+    "phone": "555-0101",
+})
+try:
+    detail = r.json().get("detail", "")
+except Exception:
+    detail = r.text
+ok = r.status_code == 400 and "Terms of Service" in str(detail)
+record("1a register WITHOUT accepted_tos -> 400", ok,
+       f"status={r.status_code} detail={detail!r}")
 
-def get(path, token=None, params=None):
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return requests.get(f"{BASE_URL}{path}", headers=headers, params=params, timeout=30)
+email_b = uniq_email("reg_tosfalse")
+r = requests.post(f"{API}/auth/register", json={
+    "email": email_b,
+    "password": "StrongPass!23",
+    "name": "Bob Reg",
+    "phone": "555-0102",
+    "accepted_tos": False,
+})
+try:
+    detail = r.json().get("detail", "")
+except Exception:
+    detail = r.text
+ok = r.status_code == 400 and "Terms of Service" in str(detail)
+record("1b register with accepted_tos=false -> 400", ok,
+       f"status={r.status_code} detail={detail!r}")
 
-
-def patch(path, token=None, params=None, json_body=None):
-    headers = {}
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-    return requests.patch(f"{BASE_URL}{path}", headers=headers, params=params, json=json_body, timeout=30)
-
-
-# ======================================================
-# Step 0: Admin login
-# ======================================================
-def admin_login():
-    r = post("/auth/login", {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
-    if r.status_code != 200:
-        log("Admin login", False, f"status={r.status_code} body={r.text}")
-        return None, None
+email_c = uniq_email("reg_ok")
+r = requests.post(f"{API}/auth/register", json={
+    "email": email_c,
+    "password": "StrongPass!23",
+    "name": "Carol Ready",
+    "phone": "555-0103",
+    "accepted_tos": True,
+})
+ok = False
+detail = ""
+if r.status_code == 200:
     data = r.json()
-    log("Admin login", True, f"user_id={data['user']['id']}")
-    return data["token"], data["user"]
+    ok = "token" in data and "user" in data and data["user"].get("email") == email_c
+    detail = f"token_present={'token' in data} user_email={data.get('user',{}).get('email')}"
+else:
+    detail = f"status={r.status_code} body={r.text[:200]}"
+record("1c register with accepted_tos=true -> 200", ok, detail)
 
 
-# ======================================================
-# Task 3: GET /api/listings?category=boat_rental seeded
-# ======================================================
-def test_seeded_boat_listing():
-    r = get("/listings", params={"category": "boat_rental"})
-    if r.status_code != 200:
-        log("GET boat_rental listings", False, f"status={r.status_code}")
-        return None
-    lst = r.json()
-    if not isinstance(lst, list) or len(lst) == 0:
-        log("GET boat_rental listings returns >=1", False, f"got {lst}")
-        return None
-    # Look for seeded pontoon
-    pontoon = None
-    for item in lst:
-        if "Blue Water Pontoon" in item.get("title", ""):
-            pontoon = item
-            break
-    if not pontoon:
-        log("Seeded 'Blue Water Pontoon' present", False, f"titles: {[i.get('title') for i in lst]}")
-        return None
-
-    # verify schema fields
-    issues = []
-    if pontoon.get("price") != 450 and pontoon.get("price") != 450.0:
-        issues.append(f"price={pontoon.get('price')}")
-    if not pontoon.get("is_long_term"):
-        issues.append(f"is_long_term={pontoon.get('is_long_term')}")
-    amen = pontoon.get("amenities", {}) or {}
-    if amen.get("life_jackets_count") != 10:
-        issues.append(f"life_jackets_count={amen.get('life_jackets_count')}")
-    add_ons = amen.get("add_ons", {}) or {}
-    for key in ["trailer", "wakeboard_tower", "fishing_gear", "bimini_top"]:
-        if key not in add_ons:
-            issues.append(f"missing add_on:{key}")
-    if issues:
-        log("Seeded Blue Water Pontoon schema", False, ", ".join(issues))
-        return pontoon
-    log("Seeded Blue Water Pontoon present w/ correct schema", True,
-        f"price={pontoon['price']}, life_jackets={amen.get('life_jackets_count')}, add_ons={list(add_ons.keys())}")
-    return pontoon
+# ---------------------------------------------------------------------------
+# Admin login
+# ---------------------------------------------------------------------------
+print("\n=== Admin login ===")
+admin_token = None
+admin_user_id = None
+r = requests.post(f"{API}/auth/login", json={
+    "email": ADMIN_EMAIL,
+    "password": ADMIN_PASSWORD,
+})
+if r.status_code == 200:
+    admin_token = r.json()["token"]
+    admin_user_id = r.json()["user"]["id"]
+    record("admin login", True, f"user_id={admin_user_id}")
+else:
+    record("admin login", False, f"status={r.status_code} body={r.text[:300]}")
 
 
-# ======================================================
-# Task 1: POST /api/listings boat_rental — negatives + happy
-# ======================================================
-def boat_payload_base():
-    return {
-        "category": "boat_rental",
-        "title": "Test Boat",
-        "description": "Test",
-        "price": 400.00,
-        "location": "Test Lake",
-        "images": ["data:image/png;base64,iVBORw0KGgo="],
-        "amenities": {
-            "boat_type": "Pontoon",
-            "length": 22.0,
-            "horsepower": 115,
-            "capacity": 6,
-            "has_dock": True,
-            "insurance_proof": "data:image/jpeg;base64,xxx",
-            "security_deposit": 400.00,
-            "life_jackets_count": 6,
-            "add_ons": {
-                "trailer": {"available": True, "price_per_day": 50.00, "included_free": False},
-                "bimini_top": {"available": True, "price_per_day": 0.00, "included_free": True},
-            },
-        },
-        "is_long_term": True,
-    }
+# ---------------------------------------------------------------------------
+# 2. ToS Acceptance on Booking
+# ---------------------------------------------------------------------------
+print("\n=== 2. ToS Acceptance on Booking ===")
 
-
-def test_boat_validation(admin_token):
-    # a. Missing insurance_proof
-    p = boat_payload_base()
-    p["amenities"].pop("insurance_proof")
-    r = post("/listings", p, token=admin_token)
-    ok = r.status_code == 400 and "insurance" in r.text.lower()
-    log("Neg: missing insurance_proof → 400", ok, f"status={r.status_code} body={r.text[:200]}")
-
-    # b. security_deposit = 0
-    p = boat_payload_base()
-    p["amenities"]["security_deposit"] = 0
-    r = post("/listings", p, token=admin_token)
-    ok = r.status_code == 400 and "deposit" in r.text.lower()
-    log("Neg: security_deposit=0 → 400", ok, f"status={r.status_code} body={r.text[:200]}")
-
-    # b2. missing security_deposit
-    p = boat_payload_base()
-    p["amenities"].pop("security_deposit")
-    r = post("/listings", p, token=admin_token)
-    ok = r.status_code == 400 and "deposit" in r.text.lower()
-    log("Neg: missing security_deposit → 400", ok, f"status={r.status_code} body={r.text[:200]}")
-
-    # c. life_jackets_count missing
-    p = boat_payload_base()
-    p["amenities"].pop("life_jackets_count")
-    r = post("/listings", p, token=admin_token)
-    ok = r.status_code == 400 and "life jacket" in r.text.lower()
-    log("Neg: missing life_jackets_count → 400", ok, f"status={r.status_code} body={r.text[:200]}")
-
-    # d. life_jackets < capacity
-    p = boat_payload_base()
-    p["amenities"]["capacity"] = 8
-    p["amenities"]["life_jackets_count"] = 2
-    r = post("/listings", p, token=admin_token)
-    ok = r.status_code == 400 and ("at least" in r.text.lower() or "capacity" in r.text.lower())
-    log("Neg: life_jackets(2) < capacity(8) → 400", ok, f"status={r.status_code} body={r.text[:200]}")
-
-    # e. Invalid category string
-    p = boat_payload_base()
-    p["category"] = "foo"
-    r = post("/listings", p, token=admin_token)
-    ok = r.status_code == 400 and "category" in r.text.lower()
-    log("Neg: invalid category 'foo' → 400", ok, f"status={r.status_code} body={r.text[:200]}")
-
-
-def test_boat_happy(admin_token):
-    p = boat_payload_base()
-    r = post("/listings", p, token=admin_token)
-    if r.status_code != 200:
-        log("Happy: create boat_rental listing", False, f"status={r.status_code} body={r.text[:300]}")
-        return None
-    data = r.json()
-    ok = (
-        data.get("id")
-        and data.get("category") == "boat_rental"
-        and data.get("is_long_term") is True
-    )
-    log("Happy: create boat_rental listing", ok,
-        f"id={data.get('id')} category={data.get('category')} is_long_term={data.get('is_long_term')}")
-    return data
-
-
-# ======================================================
-# Task 2: Booking with add-ons
-# ======================================================
-def get_or_create_verified_guest(admin_token):
-    """Register a new user, then admin-verify them."""
-    uid = uuid.uuid4().hex[:8]
-    email = f"guest_{uid}@example.com"
-    password = "GuestPass123!"
-    payload = {
-        "email": email,
-        "password": password,
-        "name": f"Guest {uid}",
-        "phone": "555-0100",
-    }
-    r = post("/auth/register", payload)
-    if r.status_code != 200:
-        log("Register new guest", False, f"status={r.status_code} body={r.text[:200]}")
-        return None, None
-    data = r.json()
-    guest_token = data["token"]
-    guest_id = data["user"]["id"]
-    log("Register new guest", True, f"email={email} id={guest_id}")
-
-    # Admin verify
-    r = patch(f"/admin/users/{guest_id}/verify", token=admin_token)
-    if r.status_code != 200:
-        log("Admin verify guest", False, f"status={r.status_code} body={r.text[:200]}")
-        return None, None
-    log("Admin verify guest", True)
-
-    # Re-login to get a fresh token reflecting verification
-    r = post("/auth/login", {"email": email, "password": password})
+fresh_guest_token = None
+fresh_guest_id = None
+fresh_guest_email = uniq_email("guest")
+if admin_token:
+    r = requests.post(f"{API}/auth/register", json={
+        "email": fresh_guest_email,
+        "password": "StrongPass!23",
+        "name": "Guest Gamma",
+        "phone": "555-0200",
+        "accepted_tos": True,
+    })
     if r.status_code == 200:
-        guest_token = r.json()["token"]
-    return guest_token, guest_id
+        fresh_guest_token = r.json()["token"]
+        fresh_guest_id = r.json()["user"]["id"]
+        vr = requests.patch(
+            f"{API}/admin/users/{fresh_guest_id}/verify",
+            headers=auth_headers(admin_token),
+        )
+        record("register+verify fresh guest", vr.status_code == 200,
+               f"verify_status={vr.status_code} body={vr.text[:200]}")
+    else:
+        record("register+verify fresh guest", False,
+               f"register_status={r.status_code} body={r.text[:200]}")
+
+public_listings = requests.get(f"{API}/listings").json()
+land_or_storage_listing = None
+# IMPORTANT: seeded land/storage listings carry synthetic owner_ids like "seed_user_5"
+# which are NOT valid Mongo ObjectIds, so the booking endpoint crashes
+# (host lookup uses ObjectId(listing["owner_id"])). We therefore create a
+# fresh land_stay listing as admin so that owner_id is a valid ObjectId.
+for l in public_listings:
+    if l.get("category") in ("land_stay", "vehicle_storage") and l.get("owner_id") != fresh_guest_id:
+        try:
+            from bson import ObjectId as _OID
+            _OID(l.get("owner_id"))
+        except Exception:
+            continue
+        land_or_storage_listing = l
+        break
+
+if admin_token and not land_or_storage_listing:
+    r = requests.post(f"{API}/listings",
+        headers=auth_headers(admin_token),
+        json={
+            "category": "land_stay",
+            "title": "Test Lakeside Campsite for ToS booking",
+            "description": "Forested site, fire ring, composting toilet.",
+            "price": 65.0,
+            "location": "Bend, OR",
+            "images": ["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD"],
+            "amenities": {"water_hookup": True, "electric_hookup": False},
+            "is_long_term": False,
+        }
+    )
+    if r.status_code == 200:
+        land_or_storage_listing = r.json()
 
 
-def test_booking_with_add_ons(admin_token, guest_token, guest_id, boat_listing):
-    if not boat_listing:
-        log("Booking: setup (boat listing created)", False, "No listing to book")
-        return
-    listing_id = boat_listing["id"]
+today = datetime.utcnow().date()
+start_date = (today + timedelta(days=10)).isoformat()
+end_date = (today + timedelta(days=12)).isoformat()
 
-    start = datetime.utcnow().date() + timedelta(days=10)
-    end = start + timedelta(days=3)
-    payload = {
-        "listing_id": listing_id,
-        "start_date": start.isoformat(),
-        "end_date": end.isoformat(),
-        "selected_add_ons": ["trailer", "bimini_top"],
+if fresh_guest_token and land_or_storage_listing:
+    # 2a: no tos_accepted
+    r = requests.post(f"{API}/bookings",
+        headers=auth_headers(fresh_guest_token),
+        json={
+            "listing_id": land_or_storage_listing["id"],
+            "start_date": start_date,
+            "end_date": end_date,
+            "selected_add_ons": [],
+        }
+    )
+    try:
+        detail = r.json().get("detail", "")
+    except Exception:
+        detail = r.text
+    ok = r.status_code == 400 and "Terms of Service" in str(detail)
+    record("2a booking WITHOUT tos_accepted -> 400", ok,
+           f"status={r.status_code} detail={detail!r}")
+
+    # 2b: tos_accepted=false
+    r = requests.post(f"{API}/bookings",
+        headers=auth_headers(fresh_guest_token),
+        json={
+            "listing_id": land_or_storage_listing["id"],
+            "start_date": start_date,
+            "end_date": end_date,
+            "tos_accepted": False,
+            "selected_add_ons": [],
+        }
+    )
+    try:
+        detail = r.json().get("detail", "")
+    except Exception:
+        detail = r.text
+    ok = r.status_code == 400 and "Terms of Service" in str(detail)
+    record("2b booking with tos_accepted=false -> 400", ok,
+           f"status={r.status_code} detail={detail!r}")
+
+    # 2c: tos_accepted=true
+    r = requests.post(f"{API}/bookings",
+        headers=auth_headers(fresh_guest_token),
+        json={
+            "listing_id": land_or_storage_listing["id"],
+            "start_date": start_date,
+            "end_date": end_date,
+            "tos_accepted": True,
+            "selected_add_ons": [],
+        }
+    )
+    ok = r.status_code == 200
+    if ok:
+        data = r.json()
+        gate_ok = data.get("status") == "pending"
+        record("2c booking tos_accepted=true -> 200 (land/storage)",
+               ok and gate_ok,
+               f"http={r.status_code} booking_status={data.get('status')} insurance_required={data.get('insurance_required')}")
+        record("4g land/storage booking status='pending' (not awaiting_insurance_review)",
+               gate_ok,
+               f"booking_status={data.get('status')}")
+    else:
+        record("2c booking tos_accepted=true -> 200", False,
+               f"status={r.status_code} body={r.text[:300]}")
+        record("4g land/storage booking status='pending'", False, "2c failed")
+else:
+    record("2a/b/c ToS on booking", False,
+           f"prereq missing: fresh_guest_token={bool(fresh_guest_token)} land_or_storage_listing={bool(land_or_storage_listing)}")
+    record("4g land/storage booking status='pending'", False,
+           "skipped - no land_stay/vehicle_storage listing found")
+
+
+# ---------------------------------------------------------------------------
+# 3. RV Listing requires Proof of Insurance
+# ---------------------------------------------------------------------------
+print("\n=== 3. RV Listing requires Proof of Insurance ===")
+
+rv_listing_id = None
+if admin_token:
+    base_rv_payload = {
+        "category": "rv_rental",
+        "title": "Test Class C RV - Luxury Adventure",
+        "description": "Well-maintained Class C motorhome sleeps 6, full kitchen and bathroom.",
+        "price": 225.0,
+        "location": "Bozeman, MT",
+        "images": ["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/placeholder"],
+        "is_long_term": False,
     }
-    r = post("/bookings", payload, token=guest_token)
-    if r.status_code != 200:
-        log("POST booking with add-ons", False, f"status={r.status_code} body={r.text[:300]}")
-        return
-    b = r.json()
 
-    def chk(name, cond, details=""):
-        log(f"Booking: {name}", bool(cond), details if not cond else "")
+    # 3a: no insurance_proof
+    payload_no_ins = dict(base_rv_payload)
+    payload_no_ins["amenities"] = {"sleeps": 6, "length_ft": 28}
+    r = requests.post(f"{API}/listings",
+        headers=auth_headers(admin_token),
+        json=payload_no_ins,
+    )
+    try:
+        detail = r.json().get("detail", "")
+    except Exception:
+        detail = r.text
+    ok = r.status_code == 400 and "insurance" in str(detail).lower() and "rv" in str(detail).lower()
+    record("3a RV listing WITHOUT insurance_proof -> 400", ok,
+           f"status={r.status_code} detail={detail!r}")
 
-    chk("days == 3", b.get("days") == 3, f"got {b.get('days')}")
-    chk("base_subtotal == 400*3 = 1200",
-        abs(float(b.get("base_subtotal", 0)) - 1200.0) < 0.01,
-        f"got {b.get('base_subtotal')}")
-    chk("add_ons has 2 entries",
-        isinstance(b.get("add_ons"), list) and len(b["add_ons"]) == 2,
-        f"got {b.get('add_ons')}")
-    add_ons = b.get("add_ons", []) or []
-    trailer = next((a for a in add_ons if a.get("key") == "trailer"), None)
-    bimini = next((a for a in add_ons if a.get("key") == "bimini_top"), None)
-    chk("trailer line_total == 150",
-        trailer and abs(float(trailer.get("line_total", 0)) - 150.0) < 0.01,
-        f"got {trailer}")
-    chk("bimini line_total == 0",
-        bimini and abs(float(bimini.get("line_total", 0)) - 0.0) < 0.01,
-        f"got {bimini}")
-    chk("add_ons_subtotal == 150",
-        abs(float(b.get("add_ons_subtotal", 0)) - 150.0) < 0.01,
-        f"got {b.get('add_ons_subtotal')}")
-    rate = float(b.get("platform_fee_rate", 0))
-    chk("platform_fee_rate is 0.10 or 0.15", rate in (0.10, 0.15), f"got {rate}")
-    expected_rental_fee = round(1200.0 * rate, 2)
-    chk(f"platform_rental_fee == base*rate ({expected_rental_fee})",
-        abs(float(b.get("platform_rental_fee", 0)) - expected_rental_fee) < 0.01,
-        f"got {b.get('platform_rental_fee')}")
-    chk("platform_add_on_fee == 15 (10% of 150)",
-        abs(float(b.get("platform_add_on_fee", 0)) - 15.0) < 0.01,
-        f"got {b.get('platform_add_on_fee')}")
-    expected_fee_total = round(expected_rental_fee + 15.0, 2)
-    chk(f"platform_fee_total == {expected_fee_total}",
-        abs(float(b.get("platform_fee_total", 0)) - expected_fee_total) < 0.01,
-        f"got {b.get('platform_fee_total')}")
-    expected_payout = round(1200 + 150 - expected_fee_total, 2)
-    chk(f"host_payout == {expected_payout}",
-        abs(float(b.get("host_payout", 0)) - expected_payout) < 0.01,
-        f"got {b.get('host_payout')}")
-    chk("security_deposit == 400",
-        abs(float(b.get("security_deposit", 0)) - 400.0) < 0.01,
-        f"got {b.get('security_deposit')}")
-    chk("total_price == base + add_ons + deposit = 1750",
-        abs(float(b.get("total_price", 0)) - (1200 + 150 + 400)) < 0.01,
-        f"got {b.get('total_price')}")
-
-    print("\nBooking response:")
-    print(json.dumps(b, indent=2, default=str))
+    # 3b: with insurance_proof
+    payload_ins = dict(base_rv_payload)
+    payload_ins["title"] = "Test Class C RV - With Insurance"
+    payload_ins["amenities"] = {
+        "sleeps": 6,
+        "length_ft": 28,
+        "insurance_proof": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/ins-ok",
+    }
+    r = requests.post(f"{API}/listings",
+        headers=auth_headers(admin_token),
+        json=payload_ins,
+    )
+    ok = r.status_code == 200
+    detail = ""
+    if ok:
+        data = r.json()
+        rv_listing_id = data.get("id")
+        ok = bool(rv_listing_id) and data.get("category") == "rv_rental"
+        detail = f"id={rv_listing_id} category={data.get('category')}"
+    else:
+        detail = f"status={r.status_code} body={r.text[:200]}"
+    record("3b RV listing WITH insurance_proof -> 200", ok, detail)
+else:
+    record("3a/b RV listing insurance gate", False, "admin_token missing")
 
 
-def main():
-    admin_token, admin_user = admin_login()
-    if not admin_token:
-        print("FATAL: cannot login admin")
-        sys.exit(1)
+# ---------------------------------------------------------------------------
+# 4. Insurance Gate on RV booking
+# ---------------------------------------------------------------------------
+print("\n=== 4. Insurance Gate on RV bookings ===")
 
-    test_seeded_boat_listing()
-    test_boat_validation(admin_token)
-    boat_listing = test_boat_happy(admin_token)
+record("4a RV listing ready (id present)", bool(rv_listing_id),
+       f"rv_listing_id={rv_listing_id}")
 
-    guest_token, guest_id = get_or_create_verified_guest(admin_token)
-    if guest_token:
-        test_booking_with_add_ons(admin_token, guest_token, guest_id, boat_listing)
+booking_id_1 = None
+booking_id_2 = None
+if rv_listing_id and fresh_guest_token:
+    # 4b
+    r = requests.post(f"{API}/bookings",
+        headers=auth_headers(fresh_guest_token),
+        json={
+            "listing_id": rv_listing_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "selected_add_ons": [],
+            "tos_accepted": True,
+        }
+    )
+    ok = r.status_code == 200
+    detail = ""
+    if ok:
+        data = r.json()
+        booking_id_1 = data.get("id")
+        status_ok = data.get("status") == "awaiting_insurance_review"
+        ins_ok = data.get("insurance_accepted") is False
+        ok = status_ok and ins_ok
+        detail = f"booking_id={booking_id_1} status={data.get('status')} insurance_accepted={data.get('insurance_accepted')}"
+    else:
+        detail = f"status={r.status_code} body={r.text[:300]}"
+    record("4b RV booking -> status=awaiting_insurance_review, insurance_accepted=false",
+           ok, detail)
 
-    passed = sum(1 for _, ok, _ in results if ok)
-    total = len(results)
-    print(f"\n====== {passed}/{total} tests passed ======")
-    failed = [r for r in results if not r[1]]
-    if failed:
-        print("Failed:")
-        for name, _, details in failed:
-            print(f"  - {name} :: {details}")
-    sys.exit(0 if not failed else 1)
+    # 4c: non-host cannot accept
+    if booking_id_1:
+        r = requests.patch(f"{API}/bookings/{booking_id_1}/accept-insurance",
+            headers=auth_headers(fresh_guest_token))
+        ok = r.status_code == 403
+        try:
+            detail = r.json().get("detail", "")
+        except Exception:
+            detail = r.text
+        record("4c non-host accept-insurance -> 403", ok,
+               f"status={r.status_code} detail={detail!r}")
+
+    # 4d: host accepts
+    if booking_id_1 and admin_token:
+        r = requests.patch(f"{API}/bookings/{booking_id_1}/accept-insurance",
+            headers=auth_headers(admin_token))
+        ok = r.status_code == 200
+        detail_json = {}
+        try:
+            detail_json = r.json()
+        except Exception:
+            pass
+        if ok:
+            ok = detail_json.get("status") == "confirmed"
+        record("4d host accept-insurance -> 200 status=confirmed", ok,
+               f"http={r.status_code} body={detail_json or r.text[:200]}")
+
+        rh = requests.get(f"{API}/bookings/host", headers=auth_headers(admin_token))
+        matched = None
+        if rh.status_code == 200:
+            for b in rh.json():
+                if b.get("id") == booking_id_1:
+                    matched = b
+                    break
+        verify_ok = bool(matched) and matched.get("status") == "confirmed" and matched.get("insurance_accepted") is True
+        record("4d-verify GET /bookings/host shows confirmed & insurance_accepted=true",
+               verify_ok,
+               f"matched={bool(matched)} status={matched.get('status') if matched else None} ins_accepted={matched.get('insurance_accepted') if matched else None}")
+
+    # 4e second booking then reject
+    r = requests.post(f"{API}/bookings",
+        headers=auth_headers(fresh_guest_token),
+        json={
+            "listing_id": rv_listing_id,
+            "start_date": (today + timedelta(days=20)).isoformat(),
+            "end_date": (today + timedelta(days=22)).isoformat(),
+            "selected_add_ons": [],
+            "tos_accepted": True,
+        }
+    )
+    if r.status_code == 200:
+        booking_id_2 = r.json().get("id")
+        record("4e create second RV booking (awaiting_insurance_review)",
+               r.json().get("status") == "awaiting_insurance_review",
+               f"booking_id={booking_id_2} status={r.json().get('status')}")
+    else:
+        record("4e create second RV booking", False,
+               f"status={r.status_code} body={r.text[:300]}")
+
+    if booking_id_2 and admin_token:
+        r = requests.patch(f"{API}/bookings/{booking_id_2}/reject-insurance",
+            headers=auth_headers(admin_token))
+        ok = r.status_code == 200
+        detail_json = {}
+        try:
+            detail_json = r.json()
+        except Exception:
+            pass
+        if ok:
+            ok = detail_json.get("status") == "cancelled"
+        record("4e host reject-insurance -> 200 status=cancelled", ok,
+               f"http={r.status_code} body={detail_json or r.text[:200]}")
+
+        # 4f
+        r = requests.patch(f"{API}/bookings/{booking_id_2}/accept-insurance",
+            headers=auth_headers(admin_token))
+        try:
+            detail = r.json().get("detail", "")
+        except Exception:
+            detail = r.text
+        ok = r.status_code == 400
+        record("4f accept-insurance on cancelled booking -> 400", ok,
+               f"status={r.status_code} detail={detail!r}")
+else:
+    record("4b-f RV insurance-gate booking flow", False,
+           f"prereq missing: rv_listing_id={bool(rv_listing_id)} fresh_guest_token={bool(fresh_guest_token)}")
 
 
-if __name__ == "__main__":
-    main()
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 72)
+print("SUMMARY")
+print("=" * 72)
+passed = sum(1 for _, ok, _ in results if ok)
+failed = sum(1 for _, ok, _ in results if not ok)
+for name, ok, detail in results:
+    print(f"  [{'PASS' if ok else 'FAIL'}] {name}")
+print(f"\nTotal: {passed} passed, {failed} failed")
+sys.exit(0 if failed == 0 else 1)

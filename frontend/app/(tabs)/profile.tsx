@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
+import LegalFooter from '../../components/LegalFooter';
 
 export default function Profile() {
   const router = useRouter();
@@ -109,7 +110,16 @@ export default function Profile() {
           <Ionicons name="log-out-outline" size={20} color={COLORS.error} />
           <Text style={styles.logoutText}>Logout</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.termsLink}
+          onPress={() => router.push('/legal/terms')}
+        >
+          <Ionicons name="document-text-outline" size={18} color={COLORS.primary} />
+          <Text style={styles.termsLinkText}>View Terms of Service</Text>
+        </TouchableOpacity>
       </ScrollView>
+      <LegalFooter />
     </SafeAreaView>
   );
 }
@@ -238,5 +248,19 @@ const styles = StyleSheet.create({
   logoutText: {
     ...TYPOGRAPHY.button,
     color: COLORS.error,
+  },
+  termsLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.md,
+  },
+  termsLinkText: {
+    color: COLORS.primary,
+    fontWeight: '600',
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });

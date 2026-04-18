@@ -5,15 +5,18 @@ import {
   StyleSheet,
   FlatList,
   RefreshControl,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import api from '../../services/api';
+import LegalFooter from '../../components/LegalFooter';
 
 export default function Bookings() {
-  const [guestBookings, setGuestBookings] = useState([]);
-  const [hostBookings, setHostBookings] = useState([]);
+  const [guestBookings, setGuestBookings] = useState<any[]>([]);
+  const [hostBookings, setHostBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'guest' | 'host'>('guest');
 
@@ -36,24 +39,109 @@ export default function Bookings() {
     }
   };
 
-  const renderBookingCard = ({ item }: any) => (
-    <View style={styles.card}>
-      <Text style={styles.cardTitle}>{item.listing_title || 'Listing'}</Text>
-      <View style={styles.cardRow}>
-        <Ionicons name="calendar" size={16} color={COLORS.textLight} />
-        <Text style={styles.cardText}>
-          {new Date(item.start_date).toLocaleDateString()} - {new Date(item.end_date).toLocaleDateString()}
-        </Text>
+  const handleAcceptInsurance = async (bookingId: string) => {
+    try {
+      await api.patch(`/api/bookings/${bookingId}/accept-insurance`);
+      Alert.alert('Accepted', 'Insurance approved — booking confirmed.');
+      loadBookings();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.detail || 'Failed to accept');
+    }
+  };
+
+  const handleRejectInsurance = async (bookingId: string) => {
+    Alert.alert(
+      'Reject Insurance?',
+      'This will cancel the booking. The guest will be notified.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.patch(`/api/bookings/${bookingId}/reject-insurance`);
+              Alert.alert('Rejected', 'Booking cancelled.');
+              loadBookings();
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.detail || 'Failed');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderBookingCard = ({ item }: any) => {
+    const isHostTab = activeTab === 'host';
+    const needsReview =
+      isHostTab && item.status === 'awaiting_insurance_review';
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{item.listing_title || 'Listing'}</Text>
+        {item.guest_name && isHostTab && (
+          <View style={styles.cardRow}>
+            <Ionicons name="person" size={16} color={COLORS.textLight} />
+            <Text style={styles.cardText}>{item.guest_name}</Text>
+          </View>
+        )}
+        <View style={styles.cardRow}>
+          <Ionicons name="calendar" size={16} color={COLORS.textLight} />
+          <Text style={styles.cardText}>
+            {new Date(item.start_date).toLocaleDateString()} -{' '}
+            {new Date(item.end_date).toLocaleDateString()}
+          </Text>
+        </View>
+        <View style={styles.cardRow}>
+          <Ionicons name="cash" size={16} color={COLORS.textLight} />
+          <Text style={styles.cardText}>${item.total_price}</Text>
+        </View>
+        <View
+          style={[
+            styles.statusBadge,
+            item.status === 'awaiting_insurance_review' && styles.statusWarn,
+            item.status === 'confirmed' && styles.statusOk,
+            item.status === 'cancelled' && styles.statusErr,
+          ]}
+        >
+          <Text style={styles.statusText}>
+            {item.status.replace(/_/g, ' ')}
+          </Text>
+        </View>
+
+        {needsReview && (
+          <View style={styles.insuranceBox}>
+            <View style={styles.insuranceHeader}>
+              <Ionicons
+                name="shield-checkmark"
+                size={20}
+                color={COLORS.primary}
+              />
+              <Text style={styles.insuranceTitle}>Insurance Review Required</Text>
+            </View>
+            <Text style={styles.insuranceHelp}>
+              Review your listing's insurance documentation and approve this
+              booking to confirm it.
+            </Text>
+            <View style={styles.insuranceBtnRow}>
+              <TouchableOpacity
+                style={[styles.insuranceBtn, styles.insuranceReject]}
+                onPress={() => handleRejectInsurance(item.id)}
+              >
+                <Text style={styles.insuranceRejectTxt}>Reject</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.insuranceBtn, styles.insuranceAccept]}
+                onPress={() => handleAcceptInsurance(item.id)}
+              >
+                <Text style={styles.insuranceAcceptTxt}>Accept & Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
-      <View style={styles.cardRow}>
-        <Ionicons name="cash" size={16} color={COLORS.textLight} />
-        <Text style={styles.cardText}>${item.total_price}</Text>
-      </View>
-      <View style={styles.statusBadge}>
-        <Text style={styles.statusText}>{item.status}</Text>
-      </View>
-    </View>
-  );
+    );
+  };
 
   const bookings = activeTab === 'guest' ? guestBookings : hostBookings;
 
@@ -91,11 +179,16 @@ export default function Bookings() {
         }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={64} color={COLORS.textLight} />
+            <Ionicons
+              name="calendar-outline"
+              size={64}
+              color={COLORS.textLight}
+            />
             <Text style={styles.emptyText}>No bookings yet</Text>
           </View>
         }
       />
+      <LegalFooter />
     </SafeAreaView>
   );
 }
@@ -154,11 +247,73 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginTop: SPACING.sm,
   },
+  statusWarn: {
+    backgroundColor: '#C8860D',
+  },
+  statusOk: {
+    backgroundColor: COLORS.primary,
+  },
+  statusErr: {
+    backgroundColor: '#8B2E2E',
+  },
   statusText: {
     fontSize: 12,
     fontWeight: '600',
     color: COLORS.surface,
     textTransform: 'capitalize',
+  },
+  insuranceBox: {
+    marginTop: SPACING.md,
+    padding: SPACING.md,
+    backgroundColor: '#F0F7F0',
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
+    borderRadius: 6,
+  },
+  insuranceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    marginBottom: SPACING.xs,
+  },
+  insuranceTitle: {
+    fontWeight: '700',
+    fontSize: 14,
+    color: COLORS.primary,
+  },
+  insuranceHelp: {
+    fontSize: 12,
+    lineHeight: 16,
+    color: COLORS.text,
+    marginBottom: SPACING.sm,
+  },
+  insuranceBtnRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+  },
+  insuranceBtn: {
+    flex: 1,
+    paddingVertical: SPACING.sm,
+    borderRadius: 6,
+    alignItems: 'center',
+  },
+  insuranceAccept: {
+    backgroundColor: COLORS.primary,
+  },
+  insuranceReject: {
+    borderWidth: 1,
+    borderColor: '#8B2E2E',
+    backgroundColor: COLORS.surface,
+  },
+  insuranceAcceptTxt: {
+    color: COLORS.surface,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  insuranceRejectTxt: {
+    color: '#8B2E2E',
+    fontWeight: '700',
+    fontSize: 14,
   },
   emptyState: {
     alignItems: 'center',

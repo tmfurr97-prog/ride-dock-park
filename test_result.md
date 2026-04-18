@@ -265,6 +265,66 @@ metadata:
         agent: "testing"
         comment: "GET /api/listings?category=boat_rental returns the seeded 'The Blue Water Pontoon' listing with price=450.0, is_long_term=true, amenities.life_jackets_count=10, and amenities.add_ons containing trailer, wakeboard_tower, fishing_gear, bimini_top. All expected schema fields present."
 
+  - task: "ToS Acceptance on Registration"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/auth/register now requires accepted_tos=true in payload; 400 if missing/false. Stores tos_accepted_at ISO timestamp on user."
+      - working: true
+        agent: "testing"
+        comment: "All 3 scenarios PASS. (1a) POST /api/auth/register without accepted_tos → 400 detail='You must agree to the Terms of Service to create an account.' (1b) accepted_tos=false → 400 same detail. (1c) accepted_tos=true with unique email → 200 with token + user object (id, email, name, phone, is_verified, created_at). Verified by /app/backend_test.py run against https://forest-dock.preview.emergentagent.com/api."
+
+  - task: "ToS Acceptance on Booking"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/bookings now requires tos_accepted=true; 400 when missing/false."
+      - working: true
+        agent: "testing"
+        comment: "All 3 scenarios PASS. Registered a fresh guest with accepted_tos=true and admin-verified them via PATCH /api/admin/users/{id}/verify. (2a) POST /api/bookings without tos_accepted → 400 'You must agree to the Terms of Service to book.' (2b) tos_accepted=false → 400 same. (2c) tos_accepted=true against a land_stay listing → 200 with booking.status='pending', insurance_required=false. NOTE: seeded land_stay/vehicle_storage listings in DB carry synthetic owner_id strings (e.g. 'seed_user_5') that are NOT valid Mongo ObjectIds — booking endpoint tries ObjectId(listing['owner_id']) and returns 400. This is a seed-data issue; booking logic itself is correct. For the happy path we created a fresh admin-owned land_stay listing."
+
+  - task: "Insurance Gate (RV & Boat) - awaiting_insurance_review + host accept/reject"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "RV & boat bookings now created with status='awaiting_insurance_review', insurance_accepted=false. PATCH /api/bookings/{id}/accept-insurance (host-only) -> status='confirmed', insurance_accepted=true. PATCH /api/bookings/{id}/reject-insurance (host-only) -> status='cancelled'. Non-host gets 403. Wrong status gets 400."
+      - working: true
+        agent: "testing"
+        comment: "Full insurance-gate flow verified end-to-end on RV rentals. (4a) Created new RV listing as admin with amenities.insurance_proof. (4b) Verified guest POST /api/bookings with tos_accepted=true → 200 with status='awaiting_insurance_review' and insurance_accepted=false. (4c) Non-host (guest) PATCH /accept-insurance → 403 'Only the host can accept this booking'. (4d) Host (admin) PATCH /accept-insurance → 200 {status:'confirmed'}; GET /api/bookings/host confirms the booking now shows status=confirmed and insurance_accepted=true. (4e) Second booking created and host PATCH /reject-insurance → 200 {status:'cancelled'}. (4f) Attempting /accept-insurance on the already-cancelled booking → 400 'Booking is not awaiting insurance review (current status: cancelled)'. (4g) Booking an admin-owned land_stay listing with tos_accepted=true → status='pending' (NOT awaiting_insurance_review), confirming the gate is category-scoped to RV/boat only."
+
+  - task: "RV Listing requires Proof of Insurance"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/listings with category=rv_rental now returns 400 if amenities.insurance_proof is missing/empty."
+      - working: true
+        agent: "testing"
+        comment: "Both scenarios PASS. (3a) Admin POST /api/listings category=rv_rental with amenities={sleeps, length_ft} but no insurance_proof → 400 'Proof of insurance is required for RV rentals'. (3b) Same payload with amenities.insurance_proof='data:image/jpeg;base64,...' → 200 OK, response contains id + category='rv_rental'."
+
 test_plan:
   current_focus: []
   stuck_tasks: []
@@ -278,3 +338,5 @@ agent_communication:
     message: "Added new backend features that need validation: (1) Boat Rentals & Docks category with strict validation (insurance_proof required, security_deposit > 0, life_jackets_count >= capacity). (2) Booking endpoint now computes platform commission (10% intro <6mo, 15% after) + flat 10% on add-ons + security deposit hold. (3) Seed script re-run with 6th boat listing. Please test: POST /api/listings boat_rental happy path + negative cases, POST /api/bookings with selected_add_ons against the seeded boat listing to verify commission math, GET /api/listings?category=boat_rental returns the seeded pontoon. Test creds in /app/memory/test_credentials.md (admin@driveshare.com / Admin123!)."
   - agent: "testing"
     message: "All 3 new backend tasks PASS (24/24 assertions in /app/backend_test.py). (1) Boat_rental category validation: all 5 negative cases (missing insurance, security_deposit=0/missing, missing life_jackets, life_jackets<capacity, invalid category) return 400 with correct messages; happy-path payload returns 200 with is_long_term=true. (2) Booking fee math verified end-to-end: days=3, base_subtotal=1200, add_ons[trailer=150, bimini=0], add_ons_subtotal=150, platform_fee_rate=0.10 (intro), platform_rental_fee=120, platform_add_on_fee=15, platform_fee_total=135, host_payout=1215, security_deposit=400, total_price=1750. (3) GET /api/listings?category=boat_rental returns the seeded 'Blue Water Pontoon' with price=450, is_long_term=true, life_jackets_count=10, and all 4 add_ons (trailer/wakeboard_tower/fishing_gear/bimini_top). ⚠️ FOUND (and fixed for tests): admin@driveshare.com password hash in the DB did NOT match the documented password 'Admin123!' — login returned 401. I reset the admin password hash to bcrypt('Admin123!') so tests could proceed. Main agent should ensure the seed/bootstrap that creates admin@driveshare.com actually hashes the password 'Admin123!' (the stored hash was the well-known FastAPI-docs fixture hash for 'secret'), otherwise anyone using the documented credential after a reseed will be locked out."
+  - agent: "testing"
+    message: "Legal Armor backend tests: ALL 19/19 assertions PASS in /app/backend_test.py. (1) ToS on registration: missing/false → 400, true → 200+token. (2) ToS on booking: missing/false → 400, true → 200 with status='pending' for land_stay listing. (3) RV listing without insurance_proof → 400, with insurance_proof → 200. (4) Insurance gate on RV bookings: new RV booking → status='awaiting_insurance_review' & insurance_accepted=false; non-host accept → 403; host accept → 200 {status:confirmed}, GET /bookings/host confirms status=confirmed & insurance_accepted=true; second booking host reject → 200 {status:cancelled}; accept on cancelled → 400; land/storage booking bypasses the gate (status='pending'). ⚠️ MINOR (non-blocking): seeded land_stay/vehicle_storage listings have synthetic owner_id strings like 'seed_user_5' that are NOT valid Mongo ObjectIds — POST /api/bookings against those seeded listings 400s with 'is not a valid ObjectId' because the booking endpoint calls ObjectId(listing['owner_id']) to compute host commission tenure. Production listings created via the API are unaffected since owner_id is always a real ObjectId string. Consider either (a) fixing the seed script to use real user ObjectIds, or (b) making the booking endpoint tolerant of non-ObjectId owner_ids (e.g. fall back to find_one({'_id'|'id': ...}) or skip commission-tenure lookup when owner_id isn't an ObjectId). No admin-password-hash drift this run — admin@driveshare.com / Admin123! worked as documented."

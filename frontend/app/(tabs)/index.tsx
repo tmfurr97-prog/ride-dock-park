@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import api from '../../services/api';
+import LegalFooter from '../../components/LegalFooter';
 
 const CATEGORIES = [
   { id: 'all', label: 'All', icon: 'apps' },
@@ -211,6 +212,7 @@ export default function Browse() {
           </View>
         }
       />
+      <LegalFooter />
     </SafeAreaView>
   );
 }

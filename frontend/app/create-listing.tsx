@@ -195,6 +195,10 @@ export default function CreateListing() {
         Alert.alert('Error', 'Please fill in RV type and capacity');
         return false;
       }
+      if (!insuranceDoc) {
+        Alert.alert('Error', 'Proof of insurance is required for RV rentals');
+        return false;
+      }
     } else if (selectedCategory === 'land_stay') {
       if (!acreage || !hookupType) {
         Alert.alert('Error', 'Please fill in acreage and hookup type');
@@ -248,6 +252,7 @@ export default function CreateListing() {
           power,
           water,
           sewage,
+          insurance_proof: insuranceDoc,
           add_ons: {
             golf_cart: golfCartAvailable
               ? {
@@ -580,6 +585,32 @@ export default function CreateListing() {
             <Text style={styles.checkboxLabel}>Sewage</Text>
           </TouchableOpacity>
         </View>
+      </View>
+      <View style={styles.section}>
+        <Text style={styles.label}>Proof of Insurance * (Required)</Text>
+        {insuranceDoc ? (
+          <View style={styles.insurancePreview}>
+            <Image source={{ uri: insuranceDoc }} style={styles.insuranceImage} />
+            <TouchableOpacity
+              style={styles.removeInsuranceButton}
+              onPress={() => setInsuranceDoc('')}
+            >
+              <Ionicons name="close-circle" size={24} color={COLORS.error} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.uploadButton}
+            onPress={pickInsuranceDoc}
+          >
+            <Ionicons name="document-attach" size={32} color={COLORS.primary} />
+            <Text style={styles.uploadButtonText}>Upload Insurance Document</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={styles.helpText}>
+          RV insurance policy or coverage proof. Host must accept this before
+          each booking confirms.
+        </Text>
       </View>
     </>
   );
