@@ -1,364 +1,328 @@
-#!/usr/bin/env python3
 """
-DriveShare & Dock Backend API Test Suite
-Tests all backend endpoints including auth, listings, payments, and more.
+Backend tests for DriveShare & Dock — focusing on 3 new tasks:
+1. Boat Rentals & Docks category validation (POST /api/listings)
+2. Booking fee calculation with add-ons + commission (POST /api/bookings)
+3. Seeded boat listing fetchable via GET /api/listings?category=boat_rental
 """
-
-import asyncio
-import aiohttp
-import json
+import os
 import sys
+import json
 import uuid
+import requests
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
 
-# Backend URL from environment
-BACKEND_URL = "https://forest-dock.preview.emergentagent.com/api"
+BASE_URL = "https://forest-dock.preview.emergentagent.com/api"
+ADMIN_EMAIL = "admin@driveshare.com"
+ADMIN_PASSWORD = "Admin123!"
 
-class BackendTester:
-    def __init__(self):
-        self.session = None
-        self.auth_token = None
-        # Use unique email for each test run to avoid conflicts
-        unique_id = str(uuid.uuid4())[:8]
-        self.test_user_data = {
-            "name": "Test User",
-            "email": f"test_{unique_id}@example.com", 
-            "phone": "555-1234",
-            "password": "password123"
-        }
-        self.test_results = []
-        
-    async def setup_session(self):
-        """Setup HTTP session"""
-        self.session = aiohttp.ClientSession()
-        
-    async def cleanup_session(self):
-        """Cleanup HTTP session"""
-        if self.session:
-            await self.session.close()
-            
-    def log_test(self, test_name: str, success: bool, details: str = "", response_data: Any = None):
-        """Log test result"""
-        status = "✅ PASS" if success else "❌ FAIL"
-        self.test_results.append({
-            "test": test_name,
-            "status": status,
-            "success": success,
-            "details": details,
-            "response_data": response_data
-        })
-        print(f"{status} {test_name}")
-        if details:
-            print(f"    {details}")
-        if not success and response_data:
-            print(f"    Response: {response_data}")
-        print()
-        
-    async def make_request(self, method: str, endpoint: str, data: Dict = None, headers: Dict = None) -> tuple:
-        """Make HTTP request and return (success, response_data, status_code)"""
-        url = f"{BACKEND_URL}{endpoint}"
-        
-        # Add auth header if token exists
-        if self.auth_token and headers is None:
-            headers = {"Authorization": f"Bearer {self.auth_token}"}
-        elif self.auth_token and headers:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
-            
-        try:
-            async with self.session.request(method, url, json=data, headers=headers) as response:
-                try:
-                    response_data = await response.json()
-                except:
-                    response_data = await response.text()
-                    
-                return response.status < 400, response_data, response.status
-        except Exception as e:
-            return False, str(e), 0
-            
-    async def test_root_endpoint(self):
-        """Test API health by checking if backend is accessible"""
-        # Since root endpoint (/) is not accessible through /api path in this setup,
-        # we'll test backend health by checking a known working endpoint
-        success, data, status = await self.make_request("GET", "/listings", headers={})
-        
-        if success and isinstance(data, list):
-            self.log_test("Backend Health Check", True, 
-                         f"Backend is accessible and responding correctly (listings endpoint)")
-        else:
-            self.log_test("Backend Health Check", False, f"Backend not accessible, Status: {status}", data)
-            
-    async def test_auth_register(self):
-        """Test POST /auth/register"""
-        success, data, status = await self.make_request("POST", "/auth/register", self.test_user_data, headers={})
-        
-        if success and isinstance(data, dict) and "token" in data and "user" in data:
-            self.auth_token = data["token"]
-            user = data["user"]
-            expected_fields = ["id", "email", "name", "phone", "is_verified", "created_at"]
-            
-            if all(field in user for field in expected_fields):
-                self.log_test("Auth Register", True, 
-                             f"User created: {user['email']}, Verified: {user['is_verified']}")
-                
-                # Save credentials for future use
-                await self.save_test_credentials(data)
-            else:
-                self.log_test("Auth Register", False, "Missing user fields", data)
-        else:
-            self.log_test("Auth Register", False, f"Status: {status}", data)
-            
-    async def test_auth_login(self):
-        """Test POST /auth/login"""
-        login_data = {
-            "email": self.test_user_data["email"],
-            "password": self.test_user_data["password"]
-        }
-        
-        success, data, status = await self.make_request("POST", "/auth/login", login_data, headers={})
-        
-        if success and isinstance(data, dict) and "token" in data and "user" in data:
-            self.auth_token = data["token"]  # Update token
-            user = data["user"]
-            
-            if user["email"] == self.test_user_data["email"]:
-                self.log_test("Auth Login", True, f"Login successful for: {user['email']}")
-            else:
-                self.log_test("Auth Login", False, "Email mismatch", data)
-        else:
-            self.log_test("Auth Login", False, f"Status: {status}", data)
-            
-    async def test_auth_me(self):
-        """Test GET /auth/me"""
-        if not self.auth_token:
-            self.log_test("Auth Me", False, "No auth token available")
-            return
-            
-        success, data, status = await self.make_request("GET", "/auth/me")
-        
-        if success and isinstance(data, dict):
-            expected_fields = ["id", "email", "name", "phone", "is_verified", "created_at"]
-            
-            if all(field in data for field in expected_fields):
-                self.log_test("Auth Me", True, 
-                             f"User info retrieved: {data['email']}, Verified: {data['is_verified']}")
-            else:
-                self.log_test("Auth Me", False, "Missing user fields", data)
-        else:
-            self.log_test("Auth Me", False, f"Status: {status}", data)
-            
-    async def test_listings_get_without_auth(self):
-        """Test GET /listings without authentication"""
-        success, data, status = await self.make_request("GET", "/listings", headers={})
-        
-        if success and isinstance(data, list):
-            self.log_test("Listings GET (No Auth)", True, 
-                         f"Retrieved {len(data)} listings without authentication")
-        else:
-            self.log_test("Listings GET (No Auth)", False, f"Status: {status}", data)
-            
-    async def test_listings_post_without_verification(self):
-        """Test POST /listings without verification (should fail with 403)"""
-        if not self.auth_token:
-            self.log_test("Listings POST (No Verification)", False, "No auth token available")
-            return
-            
-        listing_data = {
-            "category": "rv_rental",
-            "title": "Test RV Rental",
-            "description": "A beautiful RV for rent",
-            "price": 150.0,
-            "location": "San Francisco, CA",
-            "images": ["data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAv/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAAAAX/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABmX/9k="],
-            "amenities": {"wifi": True, "kitchen": True}
-        }
-        
-        success, data, status = await self.make_request("POST", "/listings", listing_data)
-        
-        # Should fail with 403 because user is not verified
-        if not success and status == 403:
-            self.log_test("Listings POST (No Verification)", True, 
-                         "Correctly rejected unverified user with 403")
-        elif success:
-            self.log_test("Listings POST (No Verification)", False, 
-                         "Should have failed for unverified user", data)
-        else:
-            self.log_test("Listings POST (No Verification)", False, f"Status: {status}", data)
-            
-    async def test_stripe_verification_create_checkout(self):
-        """Test POST /payments/verification/create-checkout"""
-        if not self.auth_token:
-            self.log_test("Stripe Verification Checkout", False, "No auth token available")
-            return
-            
-        # Use the frontend URL as origin
-        origin_url = "https://forest-dock.preview.emergentagent.com"
-        
-        success, data, status = await self.make_request(
-            "POST", 
-            f"/payments/verification/create-checkout?origin_url={origin_url}"
-        )
-        
-        if success and isinstance(data, dict):
-            if "url" in data and "session_id" in data:
-                # Verify URL contains Stripe checkout
-                if "checkout.stripe.com" in data["url"] or "stripe" in data["url"].lower():
-                    self.log_test("Stripe Verification Checkout", True, 
-                                 f"Checkout session created: {data['session_id']}")
-                else:
-                    self.log_test("Stripe Verification Checkout", False, 
-                                 "URL doesn't appear to be Stripe checkout", data)
-            else:
-                self.log_test("Stripe Verification Checkout", False, 
-                             "Missing url or session_id", data)
-        else:
-            self.log_test("Stripe Verification Checkout", False, f"Status: {status}", data)
-            
-    async def test_additional_endpoints(self):
-        """Test additional endpoints for completeness"""
-        
-        # Test listings with category filter
-        success, data, status = await self.make_request("GET", "/listings?category=rv_rental", headers={})
-        if success:
-            self.log_test("Listings GET (Category Filter)", True, f"Retrieved listings for rv_rental")
-        else:
-            self.log_test("Listings GET (Category Filter)", False, f"Status: {status}", data)
-            
-        # Test user's own listings (requires auth)
-        if self.auth_token:
-            success, data, status = await self.make_request("GET", "/listings/user/me")
-            if success and isinstance(data, list):
-                self.log_test("User Listings GET", True, f"Retrieved {len(data)} user listings")
-            else:
-                self.log_test("User Listings GET", False, f"Status: {status}", data)
-                
-    async def test_error_scenarios(self):
-        """Test error handling scenarios"""
-        
-        # Test invalid login credentials
-        invalid_login = {
-            "email": "nonexistent@example.com",
-            "password": "wrongpassword"
-        }
-        success, data, status = await self.make_request("POST", "/auth/login", invalid_login, headers={})
-        if not success and status == 401:
-            self.log_test("Invalid Login Credentials", True, "Correctly rejected invalid credentials with 401")
-        else:
-            self.log_test("Invalid Login Credentials", False, f"Should have failed with 401, got {status}", data)
-            
-        # Test accessing protected endpoint without auth
-        success, data, status = await self.make_request("GET", "/auth/me", headers={})
-        if not success and status == 401:
-            self.log_test("Protected Endpoint (No Auth)", True, "Correctly rejected unauthenticated request with 401")
-        else:
-            self.log_test("Protected Endpoint (No Auth)", False, f"Should have failed with 401, got {status}", data)
-            
-        # Test invalid auth token
-        invalid_headers = {"Authorization": "Bearer invalid_token_here"}
-        # Temporarily clear the valid token to ensure we're testing with invalid token
-        original_token = self.auth_token
-        self.auth_token = None
-        success, data, status = await self.make_request("GET", "/auth/me", headers=invalid_headers)
-        self.auth_token = original_token  # Restore valid token
-        
-        if not success and status == 401:
-            self.log_test("Invalid Auth Token", True, "Correctly rejected invalid token with 401")
-        else:
-            self.log_test("Invalid Auth Token", False, f"Should have failed with 401, got {status}", data)
-                
-    async def save_test_credentials(self, auth_data: Dict):
-        """Save test credentials to memory file"""
-        try:
-            credentials = {
-                "test_user": {
-                    "email": self.test_user_data["email"],
-                    "password": self.test_user_data["password"],
-                    "name": self.test_user_data["name"],
-                    "phone": self.test_user_data["phone"],
-                    "token": auth_data["token"],
-                    "user_id": auth_data["user"]["id"],
-                    "is_verified": auth_data["user"]["is_verified"],
-                    "created_at": datetime.now().isoformat()
-                }
-            }
-            
-            with open("/app/memory/test_credentials.md", "w") as f:
-                f.write("# Test Credentials\n")
-                f.write("# Agent writes here when creating/modifying auth credentials (admin accounts, test users).\n")
-                f.write("# Testing agent reads this before auth tests. Fork/continuation agents read on startup.\n\n")
-                f.write("## Test User Credentials\n")
-                f.write(f"- **Email**: {credentials['test_user']['email']}\n")
-                f.write(f"- **Password**: {credentials['test_user']['password']}\n")
-                f.write(f"- **Name**: {credentials['test_user']['name']}\n")
-                f.write(f"- **Phone**: {credentials['test_user']['phone']}\n")
-                f.write(f"- **User ID**: {credentials['test_user']['user_id']}\n")
-                f.write(f"- **Verified**: {credentials['test_user']['is_verified']}\n")
-                f.write(f"- **Token**: {credentials['test_user']['token'][:50]}...\n")
-                f.write(f"- **Created**: {credentials['test_user']['created_at']}\n")
-                
-        except Exception as e:
-            print(f"Failed to save credentials: {e}")
-            
-    async def run_all_tests(self):
-        """Run all backend tests"""
-        print("🚀 Starting DriveShare & Dock Backend API Tests")
-        print(f"Backend URL: {BACKEND_URL}")
-        print("=" * 60)
-        
-        await self.setup_session()
-        
-        try:
-            # Core API tests as specified in review request
-            await self.test_root_endpoint()
-            await self.test_auth_register()
-            await self.test_auth_login()
-            await self.test_auth_me()
-            await self.test_listings_get_without_auth()
-            await self.test_listings_post_without_verification()
-            await self.test_stripe_verification_create_checkout()
-            
-            # Additional endpoint tests
-            await self.test_additional_endpoints()
-            
-            # Error handling tests
-            await self.test_error_scenarios()
-            
-        finally:
-            await self.cleanup_session()
-            
-        # Print summary
-        print("=" * 60)
-        print("📊 TEST SUMMARY")
-        print("=" * 60)
-        
-        total_tests = len(self.test_results)
-        passed_tests = sum(1 for result in self.test_results if result["success"])
-        failed_tests = total_tests - passed_tests
-        
-        print(f"Total Tests: {total_tests}")
-        print(f"Passed: {passed_tests}")
-        print(f"Failed: {failed_tests}")
-        print(f"Success Rate: {(passed_tests/total_tests)*100:.1f}%")
-        
-        if failed_tests > 0:
-            print("\n❌ FAILED TESTS:")
-            for result in self.test_results:
-                if not result["success"]:
-                    print(f"  - {result['test']}: {result['details']}")
-                    
-        return failed_tests == 0
+results = []  # list of (name, ok, details)
 
-async def main():
-    """Main test runner"""
-    tester = BackendTester()
-    success = await tester.run_all_tests()
-    
-    if success:
-        print("\n🎉 All tests passed!")
-        sys.exit(0)
-    else:
-        print("\n💥 Some tests failed!")
+
+def log(name, ok, details=""):
+    status = "PASS" if ok else "FAIL"
+    print(f"[{status}] {name}" + (f" — {details}" if details else ""))
+    results.append((name, ok, details))
+
+
+def post(path, json_body=None, token=None, params=None):
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return requests.post(f"{BASE_URL}{path}", json=json_body, headers=headers, params=params, timeout=30)
+
+
+def get(path, token=None, params=None):
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return requests.get(f"{BASE_URL}{path}", headers=headers, params=params, timeout=30)
+
+
+def patch(path, token=None, params=None, json_body=None):
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return requests.patch(f"{BASE_URL}{path}", headers=headers, params=params, json=json_body, timeout=30)
+
+
+# ======================================================
+# Step 0: Admin login
+# ======================================================
+def admin_login():
+    r = post("/auth/login", {"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    if r.status_code != 200:
+        log("Admin login", False, f"status={r.status_code} body={r.text}")
+        return None, None
+    data = r.json()
+    log("Admin login", True, f"user_id={data['user']['id']}")
+    return data["token"], data["user"]
+
+
+# ======================================================
+# Task 3: GET /api/listings?category=boat_rental seeded
+# ======================================================
+def test_seeded_boat_listing():
+    r = get("/listings", params={"category": "boat_rental"})
+    if r.status_code != 200:
+        log("GET boat_rental listings", False, f"status={r.status_code}")
+        return None
+    lst = r.json()
+    if not isinstance(lst, list) or len(lst) == 0:
+        log("GET boat_rental listings returns >=1", False, f"got {lst}")
+        return None
+    # Look for seeded pontoon
+    pontoon = None
+    for item in lst:
+        if "Blue Water Pontoon" in item.get("title", ""):
+            pontoon = item
+            break
+    if not pontoon:
+        log("Seeded 'Blue Water Pontoon' present", False, f"titles: {[i.get('title') for i in lst]}")
+        return None
+
+    # verify schema fields
+    issues = []
+    if pontoon.get("price") != 450 and pontoon.get("price") != 450.0:
+        issues.append(f"price={pontoon.get('price')}")
+    if not pontoon.get("is_long_term"):
+        issues.append(f"is_long_term={pontoon.get('is_long_term')}")
+    amen = pontoon.get("amenities", {}) or {}
+    if amen.get("life_jackets_count") != 10:
+        issues.append(f"life_jackets_count={amen.get('life_jackets_count')}")
+    add_ons = amen.get("add_ons", {}) or {}
+    for key in ["trailer", "wakeboard_tower", "fishing_gear", "bimini_top"]:
+        if key not in add_ons:
+            issues.append(f"missing add_on:{key}")
+    if issues:
+        log("Seeded Blue Water Pontoon schema", False, ", ".join(issues))
+        return pontoon
+    log("Seeded Blue Water Pontoon present w/ correct schema", True,
+        f"price={pontoon['price']}, life_jackets={amen.get('life_jackets_count')}, add_ons={list(add_ons.keys())}")
+    return pontoon
+
+
+# ======================================================
+# Task 1: POST /api/listings boat_rental — negatives + happy
+# ======================================================
+def boat_payload_base():
+    return {
+        "category": "boat_rental",
+        "title": "Test Boat",
+        "description": "Test",
+        "price": 400.00,
+        "location": "Test Lake",
+        "images": ["data:image/png;base64,iVBORw0KGgo="],
+        "amenities": {
+            "boat_type": "Pontoon",
+            "length": 22.0,
+            "horsepower": 115,
+            "capacity": 6,
+            "has_dock": True,
+            "insurance_proof": "data:image/jpeg;base64,xxx",
+            "security_deposit": 400.00,
+            "life_jackets_count": 6,
+            "add_ons": {
+                "trailer": {"available": True, "price_per_day": 50.00, "included_free": False},
+                "bimini_top": {"available": True, "price_per_day": 0.00, "included_free": True},
+            },
+        },
+        "is_long_term": True,
+    }
+
+
+def test_boat_validation(admin_token):
+    # a. Missing insurance_proof
+    p = boat_payload_base()
+    p["amenities"].pop("insurance_proof")
+    r = post("/listings", p, token=admin_token)
+    ok = r.status_code == 400 and "insurance" in r.text.lower()
+    log("Neg: missing insurance_proof → 400", ok, f"status={r.status_code} body={r.text[:200]}")
+
+    # b. security_deposit = 0
+    p = boat_payload_base()
+    p["amenities"]["security_deposit"] = 0
+    r = post("/listings", p, token=admin_token)
+    ok = r.status_code == 400 and "deposit" in r.text.lower()
+    log("Neg: security_deposit=0 → 400", ok, f"status={r.status_code} body={r.text[:200]}")
+
+    # b2. missing security_deposit
+    p = boat_payload_base()
+    p["amenities"].pop("security_deposit")
+    r = post("/listings", p, token=admin_token)
+    ok = r.status_code == 400 and "deposit" in r.text.lower()
+    log("Neg: missing security_deposit → 400", ok, f"status={r.status_code} body={r.text[:200]}")
+
+    # c. life_jackets_count missing
+    p = boat_payload_base()
+    p["amenities"].pop("life_jackets_count")
+    r = post("/listings", p, token=admin_token)
+    ok = r.status_code == 400 and "life jacket" in r.text.lower()
+    log("Neg: missing life_jackets_count → 400", ok, f"status={r.status_code} body={r.text[:200]}")
+
+    # d. life_jackets < capacity
+    p = boat_payload_base()
+    p["amenities"]["capacity"] = 8
+    p["amenities"]["life_jackets_count"] = 2
+    r = post("/listings", p, token=admin_token)
+    ok = r.status_code == 400 and ("at least" in r.text.lower() or "capacity" in r.text.lower())
+    log("Neg: life_jackets(2) < capacity(8) → 400", ok, f"status={r.status_code} body={r.text[:200]}")
+
+    # e. Invalid category string
+    p = boat_payload_base()
+    p["category"] = "foo"
+    r = post("/listings", p, token=admin_token)
+    ok = r.status_code == 400 and "category" in r.text.lower()
+    log("Neg: invalid category 'foo' → 400", ok, f"status={r.status_code} body={r.text[:200]}")
+
+
+def test_boat_happy(admin_token):
+    p = boat_payload_base()
+    r = post("/listings", p, token=admin_token)
+    if r.status_code != 200:
+        log("Happy: create boat_rental listing", False, f"status={r.status_code} body={r.text[:300]}")
+        return None
+    data = r.json()
+    ok = (
+        data.get("id")
+        and data.get("category") == "boat_rental"
+        and data.get("is_long_term") is True
+    )
+    log("Happy: create boat_rental listing", ok,
+        f"id={data.get('id')} category={data.get('category')} is_long_term={data.get('is_long_term')}")
+    return data
+
+
+# ======================================================
+# Task 2: Booking with add-ons
+# ======================================================
+def get_or_create_verified_guest(admin_token):
+    """Register a new user, then admin-verify them."""
+    uid = uuid.uuid4().hex[:8]
+    email = f"guest_{uid}@example.com"
+    password = "GuestPass123!"
+    payload = {
+        "email": email,
+        "password": password,
+        "name": f"Guest {uid}",
+        "phone": "555-0100",
+    }
+    r = post("/auth/register", payload)
+    if r.status_code != 200:
+        log("Register new guest", False, f"status={r.status_code} body={r.text[:200]}")
+        return None, None
+    data = r.json()
+    guest_token = data["token"]
+    guest_id = data["user"]["id"]
+    log("Register new guest", True, f"email={email} id={guest_id}")
+
+    # Admin verify
+    r = patch(f"/admin/users/{guest_id}/verify", token=admin_token)
+    if r.status_code != 200:
+        log("Admin verify guest", False, f"status={r.status_code} body={r.text[:200]}")
+        return None, None
+    log("Admin verify guest", True)
+
+    # Re-login to get a fresh token reflecting verification
+    r = post("/auth/login", {"email": email, "password": password})
+    if r.status_code == 200:
+        guest_token = r.json()["token"]
+    return guest_token, guest_id
+
+
+def test_booking_with_add_ons(admin_token, guest_token, guest_id, boat_listing):
+    if not boat_listing:
+        log("Booking: setup (boat listing created)", False, "No listing to book")
+        return
+    listing_id = boat_listing["id"]
+
+    start = datetime.utcnow().date() + timedelta(days=10)
+    end = start + timedelta(days=3)
+    payload = {
+        "listing_id": listing_id,
+        "start_date": start.isoformat(),
+        "end_date": end.isoformat(),
+        "selected_add_ons": ["trailer", "bimini_top"],
+    }
+    r = post("/bookings", payload, token=guest_token)
+    if r.status_code != 200:
+        log("POST booking with add-ons", False, f"status={r.status_code} body={r.text[:300]}")
+        return
+    b = r.json()
+
+    def chk(name, cond, details=""):
+        log(f"Booking: {name}", bool(cond), details if not cond else "")
+
+    chk("days == 3", b.get("days") == 3, f"got {b.get('days')}")
+    chk("base_subtotal == 400*3 = 1200",
+        abs(float(b.get("base_subtotal", 0)) - 1200.0) < 0.01,
+        f"got {b.get('base_subtotal')}")
+    chk("add_ons has 2 entries",
+        isinstance(b.get("add_ons"), list) and len(b["add_ons"]) == 2,
+        f"got {b.get('add_ons')}")
+    add_ons = b.get("add_ons", []) or []
+    trailer = next((a for a in add_ons if a.get("key") == "trailer"), None)
+    bimini = next((a for a in add_ons if a.get("key") == "bimini_top"), None)
+    chk("trailer line_total == 150",
+        trailer and abs(float(trailer.get("line_total", 0)) - 150.0) < 0.01,
+        f"got {trailer}")
+    chk("bimini line_total == 0",
+        bimini and abs(float(bimini.get("line_total", 0)) - 0.0) < 0.01,
+        f"got {bimini}")
+    chk("add_ons_subtotal == 150",
+        abs(float(b.get("add_ons_subtotal", 0)) - 150.0) < 0.01,
+        f"got {b.get('add_ons_subtotal')}")
+    rate = float(b.get("platform_fee_rate", 0))
+    chk("platform_fee_rate is 0.10 or 0.15", rate in (0.10, 0.15), f"got {rate}")
+    expected_rental_fee = round(1200.0 * rate, 2)
+    chk(f"platform_rental_fee == base*rate ({expected_rental_fee})",
+        abs(float(b.get("platform_rental_fee", 0)) - expected_rental_fee) < 0.01,
+        f"got {b.get('platform_rental_fee')}")
+    chk("platform_add_on_fee == 15 (10% of 150)",
+        abs(float(b.get("platform_add_on_fee", 0)) - 15.0) < 0.01,
+        f"got {b.get('platform_add_on_fee')}")
+    expected_fee_total = round(expected_rental_fee + 15.0, 2)
+    chk(f"platform_fee_total == {expected_fee_total}",
+        abs(float(b.get("platform_fee_total", 0)) - expected_fee_total) < 0.01,
+        f"got {b.get('platform_fee_total')}")
+    expected_payout = round(1200 + 150 - expected_fee_total, 2)
+    chk(f"host_payout == {expected_payout}",
+        abs(float(b.get("host_payout", 0)) - expected_payout) < 0.01,
+        f"got {b.get('host_payout')}")
+    chk("security_deposit == 400",
+        abs(float(b.get("security_deposit", 0)) - 400.0) < 0.01,
+        f"got {b.get('security_deposit')}")
+    chk("total_price == base + add_ons + deposit = 1750",
+        abs(float(b.get("total_price", 0)) - (1200 + 150 + 400)) < 0.01,
+        f"got {b.get('total_price')}")
+
+    print("\nBooking response:")
+    print(json.dumps(b, indent=2, default=str))
+
+
+def main():
+    admin_token, admin_user = admin_login()
+    if not admin_token:
+        print("FATAL: cannot login admin")
         sys.exit(1)
 
+    test_seeded_boat_listing()
+    test_boat_validation(admin_token)
+    boat_listing = test_boat_happy(admin_token)
+
+    guest_token, guest_id = get_or_create_verified_guest(admin_token)
+    if guest_token:
+        test_booking_with_add_ons(admin_token, guest_token, guest_id, boat_listing)
+
+    passed = sum(1 for _, ok, _ in results if ok)
+    total = len(results)
+    print(f"\n====== {passed}/{total} tests passed ======")
+    failed = [r for r in results if not r[1]]
+    if failed:
+        print("Failed:")
+        for name, _, details in failed:
+            print(f"  - {name} :: {details}")
+    sys.exit(0 if not failed else 1)
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

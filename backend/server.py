@@ -47,6 +47,25 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 STRIPE_API_KEY = os.getenv("STRIPE_API_KEY")
 VERIFICATION_AMOUNT = 25.00  # Fixed $25 verification fee
 
+# Platform commission config
+PLATFORM_COMMISSION_INTRO_RATE = 0.10  # 10% for first 6 months after host joined
+PLATFORM_COMMISSION_STANDARD_RATE = 0.15  # 15% after intro period
+PLATFORM_ADD_ON_FEE_RATE = 0.10  # flat 10% on all add-ons, always
+INTRO_PERIOD_DAYS = 180  # 6 months
+
+def compute_host_commission_rate(host_created_at_iso: Optional[str]) -> float:
+    """Returns the platform commission rate for the host based on tenure."""
+    if not host_created_at_iso:
+        return PLATFORM_COMMISSION_STANDARD_RATE
+    try:
+        host_created = datetime.fromisoformat(host_created_at_iso.replace("Z", ""))
+    except Exception:
+        return PLATFORM_COMMISSION_STANDARD_RATE
+    age = datetime.utcnow() - host_created
+    if age.days < INTRO_PERIOD_DAYS:
+        return PLATFORM_COMMISSION_INTRO_RATE
+    return PLATFORM_COMMISSION_STANDARD_RATE
+
 # Helper functions
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -105,13 +124,14 @@ class UserResponse(BaseModel):
     created_at: str
 
 class ListingCreate(BaseModel):
-    category: str  # "rv_rental", "land_stay", "vehicle_storage"
+    category: str  # "rv_rental", "land_stay", "vehicle_storage", "boat_rental"
     title: str
     description: str
     price: float
     location: str
     images: List[str]  # base64 images
     amenities: Dict[str, Any]
+    is_long_term: Optional[bool] = False
 
 class ListingResponse(BaseModel):
     id: str
@@ -131,6 +151,7 @@ class BookingCreate(BaseModel):
     listing_id: str
     start_date: str
     end_date: str
+    selected_add_ons: Optional[List[str]] = []  # e.g., ["golf_cart", "trailer", "bimini_top"]
 
 class BookingResponse(BaseModel):
     id: str
@@ -400,6 +421,34 @@ async def create_listing(
     if not current_user.get("is_verified"):
         raise HTTPException(status_code=403, detail="Must be verified to create listings")
     
+    # Validate category
+    allowed_categories = {"rv_rental", "land_stay", "vehicle_storage", "boat_rental"}
+    if listing.category not in allowed_categories:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid category. Must be one of: {', '.join(sorted(allowed_categories))}"
+        )
+    
+    # Boat rental requires insurance proof, security deposit, and life jackets count
+    if listing.category == "boat_rental":
+        amen = listing.amenities or {}
+        if not amen.get("insurance_proof"):
+            raise HTTPException(status_code=400, detail="Proof of insurance is required for boat rentals")
+        if not amen.get("security_deposit") or float(amen.get("security_deposit", 0)) <= 0:
+            raise HTTPException(status_code=400, detail="Security deposit is required for boat rentals")
+        life_jackets = amen.get("life_jackets_count")
+        capacity = amen.get("capacity", 0)
+        if not life_jackets or int(life_jackets) <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Life jackets count is required for boat rentals (Coast Guard requirement)"
+            )
+        if int(life_jackets) < int(capacity):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Life jackets ({life_jackets}) must be at least equal to boat capacity ({capacity})"
+            )
+    
     new_listing = {
         "owner_id": current_user["_id"],
         "owner_name": current_user["name"],
@@ -410,6 +459,7 @@ async def create_listing(
         "location": listing.location,
         "images": listing.images,
         "amenities": listing.amenities,
+        "is_long_term": listing.is_long_term or False,
         "status": "active",
         "created_at": datetime.utcnow().isoformat()
     }
@@ -519,7 +569,7 @@ async def create_booking(
         if listing["owner_id"] == current_user["_id"]:
             raise HTTPException(status_code=400, detail="Cannot book your own listing")
         
-        # Calculate total price (simple calculation, can be enhanced)
+        # Calculate base rental price
         start = datetime.fromisoformat(booking.start_date)
         end = datetime.fromisoformat(booking.end_date)
         days = (end - start).days
@@ -527,7 +577,44 @@ async def create_booking(
         if days <= 0:
             raise HTTPException(status_code=400, detail="Invalid date range")
         
-        total_price = listing["price"] * days
+        base_subtotal = listing["price"] * days
+        
+        # Add-ons (owner-priced, flat 10% platform fee on each)
+        amenities = listing.get("amenities", {}) or {}
+        available_add_ons = amenities.get("add_ons", {}) or {}
+        selected = booking.selected_add_ons or []
+        
+        add_on_items = []
+        add_ons_subtotal = 0.0
+        for key in selected:
+            cfg = available_add_ons.get(key)
+            if not cfg or not cfg.get("available"):
+                continue
+            price_per_day = float(cfg.get("price_per_day", 0) or 0)
+            line_total = price_per_day * days
+            add_on_items.append({
+                "key": key,
+                "price_per_day": price_per_day,
+                "days": days,
+                "line_total": round(line_total, 2),
+                "included_free": cfg.get("included_free", price_per_day == 0),
+            })
+            add_ons_subtotal += line_total
+        
+        # Fetch host for commission tenure
+        host = await db.users.find_one({"_id": ObjectId(listing["owner_id"])})
+        host_rate = compute_host_commission_rate(host.get("created_at") if host else None)
+        
+        rental_commission = base_subtotal * host_rate
+        add_on_commission = add_ons_subtotal * PLATFORM_ADD_ON_FEE_RATE
+        platform_fee_total = rental_commission + add_on_commission
+        
+        # Security deposit (held but not earned)
+        security_deposit = float(amenities.get("security_deposit", 0) or 0)
+        
+        # Total charged to guest = rentals + add-ons + security deposit (deposit refundable)
+        total_price = base_subtotal + add_ons_subtotal + security_deposit
+        host_payout = (base_subtotal + add_ons_subtotal) - platform_fee_total
         
         new_booking = {
             "listing_id": booking.listing_id,
@@ -535,7 +622,17 @@ async def create_booking(
             "host_id": listing["owner_id"],
             "start_date": booking.start_date,
             "end_date": booking.end_date,
-            "total_price": total_price,
+            "days": days,
+            "base_subtotal": round(base_subtotal, 2),
+            "add_ons": add_on_items,
+            "add_ons_subtotal": round(add_ons_subtotal, 2),
+            "security_deposit": round(security_deposit, 2),
+            "platform_fee_rate": host_rate,
+            "platform_rental_fee": round(rental_commission, 2),
+            "platform_add_on_fee": round(add_on_commission, 2),
+            "platform_fee_total": round(platform_fee_total, 2),
+            "host_payout": round(host_payout, 2),
+            "total_price": round(total_price, 2),
             "status": "pending",
             "created_at": datetime.utcnow().isoformat()
         }

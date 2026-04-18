@@ -24,9 +24,11 @@ const CATEGORIES = [
   { id: 'rv_rental', label: 'RV Rental', icon: 'car' },
   { id: 'land_stay', label: 'Land Stay', icon: 'home' },
   { id: 'vehicle_storage', label: 'Vehicle Storage', icon: 'cube' },
+  { id: 'boat_rental', label: 'Boat Rental & Dock', icon: 'boat' },
 ];
 
 const RV_TYPES = ['Class A', 'Class B', 'Class C', 'Fifth Wheel', 'Travel Trailer', 'Toy Hauler'];
+const BOAT_TYPES = ['Pontoon', 'Fishing Boat', 'Yacht', 'Sailboat', 'Speedboat', 'Houseboat'];
 const HOOKUP_TYPES = ['Full Hookup', 'Water & Electric', 'Electric Only', 'Dry Camping'];
 const SECURITY_FEATURES = ['Gated', 'Cameras', 'Lights', '24/7 Access', 'Security Guard'];
 
@@ -42,6 +44,9 @@ export default function CreateListing() {
   const [price, setPrice] = useState('');
   const [location, setLocation] = useState('');
   const [images, setImages] = useState<string[]>([]);
+  const [isLongTerm, setIsLongTerm] = useState(false);
+  const [insuranceDoc, setInsuranceDoc] = useState('');
+  const [securityDeposit, setSecurityDeposit] = useState('');
 
   // RV Rental fields
   const [rvType, setRvType] = useState('');
@@ -61,6 +66,28 @@ export default function CreateListing() {
   const [height, setHeight] = useState('');
   const [securityFeatures, setSecurityFeatures] = useState<string[]>([]);
   const [accessHours, setAccessHours] = useState('');
+
+  // Boat Rental fields
+  const [boatType, setBoatType] = useState('');
+  const [boatLength, setBoatLength] = useState('');
+  const [horsepower, setHorsepower] = useState('');
+  const [boatCapacity, setBoatCapacity] = useState('');
+  const [hasDock, setHasDock] = useState(false);
+  const [lifeJacketsCount, setLifeJacketsCount] = useState('');
+
+  // Boat add-ons (owner opts in + sets own price; empty price = included free)
+  const [trailerIncluded, setTrailerIncluded] = useState(false);
+  const [trailerPrice, setTrailerPrice] = useState('');
+  const [wakeboardTower, setWakeboardTower] = useState(false);
+  const [wakeboardTowerPrice, setWakeboardTowerPrice] = useState('');
+  const [fishingGear, setFishingGear] = useState(false);
+  const [fishingGearPrice, setFishingGearPrice] = useState('');
+  const [biminiTop, setBiminiTop] = useState(false);
+  const [biminiTopPrice, setBiminiTopPrice] = useState('');
+
+  // Golf Cart add-on (RV Rentals + Land Stays only)
+  const [golfCartAvailable, setGolfCartAvailable] = useState(false);
+  const [golfCartPrice, setGolfCartPrice] = useState('');
 
   const requestPermissions = async () => {
     const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
@@ -112,6 +139,28 @@ export default function CreateListing() {
     }
   };
 
+  const pickInsuranceDoc = async () => {
+    const hasPermission = await requestPermissions();
+    if (!hasPermission) return;
+
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!result.canceled && result.assets[0].base64) {
+        const base64Image = `data:image/jpeg;base64,${result.assets[0].base64}`;
+        setInsuranceDoc(base64Image);
+      }
+    } catch (error) {
+      console.error('Error picking insurance doc:', error);
+      Alert.alert('Error', 'Failed to pick insurance document');
+    }
+  };
+
   const removeImage = (index: number) => {
     setImages(images.filter((_, i) => i !== index));
   };
@@ -156,6 +205,30 @@ export default function CreateListing() {
         Alert.alert('Error', 'Please fill in storage dimensions');
         return false;
       }
+    } else if (selectedCategory === 'boat_rental') {
+      if (!boatType || !boatLength || !horsepower || !boatCapacity) {
+        Alert.alert('Error', 'Please fill in boat details');
+        return false;
+      }
+      if (!insuranceDoc) {
+        Alert.alert('Error', 'Proof of insurance is required for boat rentals');
+        return false;
+      }
+      if (!securityDeposit || parseFloat(securityDeposit) <= 0) {
+        Alert.alert('Error', 'Security deposit is required for boat rentals');
+        return false;
+      }
+      if (!lifeJacketsCount || parseInt(lifeJacketsCount) <= 0) {
+        Alert.alert('Error', 'Life jackets count is required (must match max rental capacity, per Coast Guard).');
+        return false;
+      }
+      if (parseInt(lifeJacketsCount) < parseInt(boatCapacity)) {
+        Alert.alert(
+          'Error',
+          `Life jackets (${lifeJacketsCount}) must be at least equal to rental capacity (${boatCapacity}).`
+        );
+        return false;
+      }
     }
 
     return true;
@@ -175,12 +248,30 @@ export default function CreateListing() {
           power,
           water,
           sewage,
+          add_ons: {
+            golf_cart: golfCartAvailable
+              ? {
+                  available: true,
+                  price_per_day: golfCartPrice ? parseFloat(golfCartPrice) : 0,
+                  included_free: !golfCartPrice || parseFloat(golfCartPrice) === 0,
+                }
+              : { available: false },
+          },
         };
       } else if (selectedCategory === 'land_stay') {
         amenities = {
           acreage: parseFloat(acreage),
           hookup_type: hookupType,
           utilities,
+          add_ons: {
+            golf_cart: golfCartAvailable
+              ? {
+                  available: true,
+                  price_per_day: golfCartPrice ? parseFloat(golfCartPrice) : 0,
+                  included_free: !golfCartPrice || parseFloat(golfCartPrice) === 0,
+                }
+              : { available: false },
+          },
         };
       } else if (selectedCategory === 'vehicle_storage') {
         amenities = {
@@ -192,6 +283,47 @@ export default function CreateListing() {
           security_features: securityFeatures,
           access_hours: accessHours,
         };
+      } else if (selectedCategory === 'boat_rental') {
+        amenities = {
+          boat_type: boatType,
+          length: parseFloat(boatLength),
+          horsepower: parseInt(horsepower),
+          capacity: parseInt(boatCapacity),
+          has_dock: hasDock,
+          insurance_proof: insuranceDoc,
+          security_deposit: parseFloat(securityDeposit),
+          life_jackets_count: parseInt(lifeJacketsCount),
+          add_ons: {
+            trailer: trailerIncluded
+              ? {
+                  available: true,
+                  price_per_day: trailerPrice ? parseFloat(trailerPrice) : 0,
+                  included_free: !trailerPrice || parseFloat(trailerPrice) === 0,
+                }
+              : { available: false },
+            wakeboard_tower: wakeboardTower
+              ? {
+                  available: true,
+                  price_per_day: wakeboardTowerPrice ? parseFloat(wakeboardTowerPrice) : 0,
+                  included_free: !wakeboardTowerPrice || parseFloat(wakeboardTowerPrice) === 0,
+                }
+              : { available: false },
+            fishing_gear: fishingGear
+              ? {
+                  available: true,
+                  price_per_day: fishingGearPrice ? parseFloat(fishingGearPrice) : 0,
+                  included_free: !fishingGearPrice || parseFloat(fishingGearPrice) === 0,
+                }
+              : { available: false },
+            bimini_top: biminiTop
+              ? {
+                  available: true,
+                  price_per_day: biminiTopPrice ? parseFloat(biminiTopPrice) : 0,
+                  included_free: !biminiTopPrice || parseFloat(biminiTopPrice) === 0,
+                }
+              : { available: false },
+          },
+        };
       }
 
       const response = await api.post('/api/listings', {
@@ -202,6 +334,7 @@ export default function CreateListing() {
         location: location.trim(),
         images,
         amenities,
+        is_long_term: isLongTerm,
       });
 
       Alert.alert('Success', 'Listing created successfully!', [
@@ -216,6 +349,91 @@ export default function CreateListing() {
       setLoading(false);
     }
   };
+
+  const renderGolfCartAddOn = () => (
+    <View style={styles.section}>
+      <Text style={styles.label}>Add-On: Golf Cart</Text>
+      <TouchableOpacity
+        style={styles.longTermToggle}
+        onPress={() => setGolfCartAvailable(!golfCartAvailable)}
+      >
+        <View style={styles.toggleLeft}>
+          <Ionicons
+            name={golfCartAvailable ? 'checkbox' : 'square-outline'}
+            size={24}
+            color={COLORS.primary}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>Golf Cart Available?</Text>
+            <Text style={styles.toggleSubtext}>Enable only if you have one to offer the renter</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+      {golfCartAvailable && (
+        <View style={{ marginTop: SPACING.sm }}>
+          <Text style={styles.label}>Golf Cart Price (per day)</Text>
+          <View style={styles.priceInput}>
+            <Text style={styles.priceSymbol}>$</Text>
+            <TextInput
+              style={[styles.input, styles.priceField]}
+              value={golfCartPrice}
+              onChangeText={setGolfCartPrice}
+              placeholder="Leave blank to include free"
+              placeholderTextColor={COLORS.textLight}
+              keyboardType="decimal-pad"
+            />
+          </View>
+          <Text style={styles.helpText}>
+            Leave blank or $0 = included free. Platform takes 10% add-on fee.
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+
+  const renderBoatAddOn = (
+    label: string,
+    enabled: boolean,
+    setEnabled: (v: boolean) => void,
+    price: string,
+    setPrice: (v: string) => void,
+    subtext: string
+  ) => (
+    <View style={styles.section}>
+      <TouchableOpacity
+        style={styles.longTermToggle}
+        onPress={() => setEnabled(!enabled)}
+      >
+        <View style={styles.toggleLeft}>
+          <Ionicons
+            name={enabled ? 'checkbox' : 'square-outline'}
+            size={24}
+            color={COLORS.primary}
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleLabel}>{label}</Text>
+            <Text style={styles.toggleSubtext}>{subtext}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+      {enabled && (
+        <View style={{ marginTop: SPACING.sm }}>
+          <View style={styles.priceInput}>
+            <Text style={styles.priceSymbol}>$</Text>
+            <TextInput
+              style={[styles.input, styles.priceField]}
+              value={price}
+              onChangeText={setPrice}
+              placeholder="Leave blank to include free"
+              placeholderTextColor={COLORS.textLight}
+              keyboardType="decimal-pad"
+            />
+          </View>
+          <Text style={styles.helpText}>Daily price. Blank or $0 = included free.</Text>
+        </View>
+      )}
+    </View>
+  );
 
   const renderCategorySelector = () => (
     <View style={styles.section}>
@@ -497,6 +715,180 @@ export default function CreateListing() {
     </>
   );
 
+  const renderBoatFields = () => (
+    <>
+      <View style={styles.section}>
+        <Text style={styles.label}>Boat Type *</Text>
+        <View style={styles.chipContainer}>
+          {BOAT_TYPES.map((type) => (
+            <TouchableOpacity
+              key={type}
+              style={[
+                styles.chip,
+                boatType === type && styles.chipActive,
+              ]}
+              onPress={() => setBoatType(type)}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  boatType === type && styles.chipTextActive,
+                ]}
+              >
+                {type}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Boat Length (feet) *</Text>
+        <TextInput
+          style={styles.input}
+          value={boatLength}
+          onChangeText={setBoatLength}
+          placeholder="e.g., 24"
+          placeholderTextColor={COLORS.textLight}
+          keyboardType="decimal-pad"
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Horsepower *</Text>
+        <TextInput
+          style={styles.input}
+          value={horsepower}
+          onChangeText={setHorsepower}
+          placeholder="e.g., 150"
+          placeholderTextColor={COLORS.textLight}
+          keyboardType="number-pad"
+        />
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Capacity (people) *</Text>
+        <TextInput
+          style={styles.input}
+          value={boatCapacity}
+          onChangeText={setBoatCapacity}
+          placeholder="e.g., 8"
+          placeholderTextColor={COLORS.textLight}
+          keyboardType="number-pad"
+        />
+      </View>
+
+      <View style={styles.section}>
+        <TouchableOpacity
+          style={styles.checkbox}
+          onPress={() => setHasDock(!hasDock)}
+        >
+          <Ionicons
+            name={hasDock ? 'checkbox' : 'square-outline'}
+            size={24}
+            color={COLORS.primary}
+          />
+          <Text style={styles.checkboxLabel}>Includes Private Dock/Slip</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Security Deposit * (USD)</Text>
+        <View style={styles.priceInput}>
+          <Text style={styles.priceSymbol}>$</Text>
+          <TextInput
+            style={[styles.input, styles.priceField]}
+            value={securityDeposit}
+            onChangeText={setSecurityDeposit}
+            placeholder="500.00"
+            placeholderTextColor={COLORS.textLight}
+            keyboardType="decimal-pad"
+          />
+        </View>
+        <Text style={styles.helpText}>Refundable deposit held during rental</Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Life Jackets Provided * (max # per rental)</Text>
+        <TextInput
+          style={styles.input}
+          value={lifeJacketsCount}
+          onChangeText={setLifeJacketsCount}
+          placeholder="Must be ≥ boat capacity"
+          placeholderTextColor={COLORS.textLight}
+          keyboardType="number-pad"
+        />
+        <Text style={styles.helpText}>
+          REQUIRED by Coast Guard. Must be at least equal to rental capacity.
+        </Text>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={[styles.label, { fontSize: 18, marginTop: SPACING.md }]}>Boat Add-Ons (Optional)</Text>
+        <Text style={styles.helpText}>
+          Only enable items you actually have available. Platform takes flat 10% fee on all add-ons.
+        </Text>
+      </View>
+
+      {renderBoatAddOn(
+        'Trailer Included',
+        trailerIncluded,
+        setTrailerIncluded,
+        trailerPrice,
+        setTrailerPrice,
+        'Offer transport trailer for haul-out rentals'
+      )}
+      {renderBoatAddOn(
+        'Wakeboard Tower',
+        wakeboardTower,
+        setWakeboardTower,
+        wakeboardTowerPrice,
+        setWakeboardTowerPrice,
+        'Tower for tow sports (wakeboard, tube, ski)'
+      )}
+      {renderBoatAddOn(
+        'Fishing Gear',
+        fishingGear,
+        setFishingGear,
+        fishingGearPrice,
+        setFishingGearPrice,
+        'Rods, tackle box, bait, nets'
+      )}
+      {renderBoatAddOn(
+        'Bimini Top',
+        biminiTop,
+        setBiminiTop,
+        biminiTopPrice,
+        setBiminiTopPrice,
+        'Retractable sun canopy'
+      )}
+
+      <View style={styles.section}>
+        <Text style={styles.label}>Proof of Insurance * (Required)</Text>
+        {insuranceDoc ? (
+          <View style={styles.insurancePreview}>
+            <Image source={{ uri: insuranceDoc }} style={styles.insuranceImage} />
+            <TouchableOpacity
+              style={styles.removeInsuranceButton}
+              onPress={() => setInsuranceDoc('')}
+            >
+              <Ionicons name="close-circle" size={24} color={COLORS.error} />
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <TouchableOpacity
+            style={styles.uploadButton}
+            onPress={pickInsuranceDoc}
+          >
+            <Ionicons name="document-attach" size={32} color={COLORS.primary} />
+            <Text style={styles.uploadButtonText}>Upload Insurance Document</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={styles.helpText}>Boat insurance policy or coverage proof</Text>
+      </View>
+    </>
+  );
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <View style={styles.header}>
@@ -547,7 +939,7 @@ export default function CreateListing() {
 
           <View style={styles.section}>
             <Text style={styles.label}>
-              Price * (per {selectedCategory === 'rv_rental' ? 'day' : selectedCategory === 'land_stay' ? 'night' : 'month'})
+              Price * (per {selectedCategory === 'rv_rental' || selectedCategory === 'boat_rental' ? 'day' : selectedCategory === 'land_stay' ? 'night' : 'month'})
             </Text>
             <View style={styles.priceInput}>
               <Text style={styles.priceSymbol}>$</Text>
@@ -561,6 +953,27 @@ export default function CreateListing() {
               />
             </View>
           </View>
+
+          {(selectedCategory === 'boat_rental' || selectedCategory === 'land_stay') && (
+            <View style={styles.section}>
+              <TouchableOpacity
+                style={styles.longTermToggle}
+                onPress={() => setIsLongTerm(!isLongTerm)}
+              >
+                <View style={styles.toggleLeft}>
+                  <Ionicons
+                    name={isLongTerm ? 'checkbox' : 'square-outline'}
+                    size={24}
+                    color={COLORS.primary}
+                  />
+                  <View>
+                    <Text style={styles.toggleLabel}>Long-Term / Monthly Lease</Text>
+                    <Text style={styles.toggleSubtext}>365-day availability for extended rentals</Text>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.label}>Location *</Text>
@@ -576,6 +989,10 @@ export default function CreateListing() {
           {selectedCategory === 'rv_rental' && renderRVFields()}
           {selectedCategory === 'land_stay' && renderLandFields()}
           {selectedCategory === 'vehicle_storage' && renderStorageFields()}
+          {selectedCategory === 'boat_rental' && renderBoatFields()}
+
+          {(selectedCategory === 'rv_rental' || selectedCategory === 'land_stay') &&
+            renderGolfCartAddOn()}
 
           {renderImagePicker()}
 
@@ -795,5 +1212,66 @@ const styles = StyleSheet.create({
   submitButtonText: {
     ...TYPOGRAPHY.button,
     fontSize: 18,
+  },
+  longTermToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: COLORS.surface,
+    borderRadius: 8,
+    padding: SPACING.md,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  toggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.md,
+    flex: 1,
+  },
+  toggleLabel: {
+    ...TYPOGRAPHY.body,
+    fontWeight: '600',
+  },
+  toggleSubtext: {
+    ...TYPOGRAPHY.caption,
+    marginTop: SPACING.xs,
+  },
+  uploadButton: {
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+    borderRadius: 8,
+    padding: SPACING.lg,
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+  },
+  uploadButtonText: {
+    ...TYPOGRAPHY.body,
+    color: COLORS.primary,
+    marginTop: SPACING.sm,
+    fontWeight: '600',
+  },
+  insurancePreview: {
+    position: 'relative',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  insuranceImage: {
+    width: '100%',
+    height: 200,
+    backgroundColor: COLORS.background,
+  },
+  removeInsuranceButton: {
+    position: 'absolute',
+    top: SPACING.sm,
+    right: SPACING.sm,
+    backgroundColor: COLORS.surface,
+    borderRadius: 12,
+  },
+  helpText: {
+    ...TYPOGRAPHY.caption,
+    marginTop: SPACING.xs,
+    fontStyle: 'italic',
   },
 });

@@ -23,6 +23,7 @@ const CATEGORIES = [
   { id: 'rv_rental', label: 'RV Rentals', icon: 'car' },
   { id: 'land_stay', label: 'Land Stays', icon: 'home' },
   { id: 'vehicle_storage', label: 'Storage', icon: 'cube' },
+  { id: 'boat_rental', label: 'Boats', icon: 'boat' },
 ];
 
 export default function Browse() {
@@ -79,8 +80,9 @@ export default function Browse() {
   };
 
   const renderListingCard = ({ item }: any) => {
-    const priceUnit = item.category === 'rv_rental' ? 'day' : item.category === 'land_stay' ? 'night' : 'month';
+    const priceUnit = item.category === 'rv_rental' || item.category === 'boat_rental' ? 'day' : item.category === 'land_stay' ? 'night' : 'month';
     const isBooked = item.status === 'booked';
+    const isLongTerm = item.is_long_term || false;
 
     return (
       <TouchableOpacity
@@ -107,6 +109,11 @@ export default function Browse() {
               </View>
             </View>
           )}
+          {isLongTerm && (
+            <View style={styles.longTermBadge}>
+              <Text style={styles.longTermText}>365-Day Lease</Text>
+            </View>
+          )}
         </View>
         <View style={styles.cardContent}>
           <Text style={styles.cardTitle} numberOfLines={1}>
@@ -120,7 +127,7 @@ export default function Browse() {
             <Text style={styles.cardPrice}>${item.price}/{priceUnit}</Text>
             <View style={styles.categoryBadge}>
               <Text style={styles.categoryBadgeText}>
-                {item.category === 'rv_rental' ? 'RV' : item.category === 'land_stay' ? 'Land' : 'Storage'}
+                {item.category === 'rv_rental' ? 'RV' : item.category === 'land_stay' ? 'Land' : item.category === 'boat_rental' ? 'Boat' : 'Storage'}
               </Text>
             </View>
           </View>
@@ -311,6 +318,20 @@ const styles = StyleSheet.create({
   bookedText: {
     color: COLORS.surface,
     fontSize: 14,
+    fontWeight: 'bold',
+  },
+  longTermBadge: {
+    position: 'absolute',
+    top: SPACING.sm,
+    right: SPACING.sm,
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: 4,
+  },
+  longTermText: {
+    color: COLORS.surface,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   placeholderImage: {

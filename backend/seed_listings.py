@@ -195,6 +195,69 @@ Perfect For: Fishing enthusiasts, water sports, luxury RV living, or investment 
         },
         "status": "booked",
         "created_at": datetime.utcnow().isoformat()
+    },
+    {
+        "owner_id": "seed_user_6",
+        "owner_name": "Marina Bay Rentals",
+        "category": "boat_rental",
+        "title": "The Blue Water Pontoon - 24ft Premium w/ 150HP Mercury",
+        "description": """Experience luxury on the water with our premium 24-foot pontoon boat. This meticulously maintained vessel combines comfort, performance, and safety for unforgettable days on the lake.
+
+Boat Specifications:
+• 24-foot premium pontoon with modern amenities
+• 150HP Mercury outboard motor (professionally serviced)
+• Capacity: 8 passengers plus captain
+• Bimini top for sun protection
+• Premium sound system with Bluetooth
+• Built-in cooler and storage compartments
+• GPS fish finder included
+• Safety equipment exceeds Coast Guard requirements
+
+Dock & Marina Features:
+• Private covered slip at premium marina
+• Easy loading dock with boarding platform
+• Fuel available on-site
+• Restroom and shower facilities
+• Ample parking at marina
+
+Security & Insurance:
+• Comprehensive marine insurance included
+• $500 refundable security deposit
+• Pre-departure safety briefing required
+• 24/7 emergency support hotline
+• Boat inspected before each rental
+
+Current Availability: RESERVED FOR LONG-TERM LEASE
+This vessel is currently under a 365-day lease agreement with a vetted corporate client for executive waterfront entertainment. Limited seasonal availability may open in Q3 for premium daily rates.
+
+Long-Term Lease Option: Available for qualified applicants seeking year-round water access. Perfect for corporate events, fishing charters, or lifestyle lease agreements. Annual contracts provide significant cost savings and guaranteed availability.
+
+Insurance Required: Proof of boating insurance or purchase of our comprehensive coverage package mandatory for all renters. Coast Guard certification recommended but not required.""",
+        "price": 450.00,
+        "location": "Lake Havasu, Arizona",
+        "images": [
+            "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?w=800",
+            "https://images.unsplash.com/photo-1567899378494-47b22a2ae96a?w=800&crop=entropy&fit=crop"
+        ],
+        "amenities": {
+            "boat_type": "Pontoon",
+            "length": 24.0,
+            "horsepower": 150,
+            "capacity": 8,
+            "has_dock": True,
+            "insurance_proof": "data:image/jpeg;base64,placeholder",
+            "security_deposit": 500.00,
+            "life_jackets_count": 10,
+            "add_ons": {
+                "trailer": {"available": True, "price_per_day": 75.00, "included_free": False},
+                "wakeboard_tower": {"available": True, "price_per_day": 50.00, "included_free": False},
+                "fishing_gear": {"available": True, "price_per_day": 0.00, "included_free": True},
+                "bimini_top": {"available": True, "price_per_day": 0.00, "included_free": True}
+            }
+        },
+        "status": "booked",
+        "is_long_term": True,
+        "created_at": datetime.utcnow().isoformat()
     }
 ]
 
@@ -216,10 +279,13 @@ async def seed_database():
     print(f"✅ Successfully created {len(result.inserted_ids)} premium listings:")
     
     for i, listing in enumerate(MOCK_LISTINGS, 1):
-        print(f"   {i}. {listing['title']} - ${listing['price']}/{'day' if listing['category'] == 'rv_rental' else 'night' if listing['category'] == 'land_stay' else 'month'}")
+        price_unit = 'day' if listing['category'] == 'rv_rental' or listing['category'] == 'boat_rental' else 'night' if listing['category'] == 'land_stay' else 'month'
+        long_term = ' [365-Day Lease]' if listing.get('is_long_term') else ''
+        print(f"   {i}. {listing['title']} - ${listing['price']}/{price_unit}{long_term}")
     
     print("\n📊 Social proof listings are now live in the marketplace!")
     print("🔒 All listings marked as 'Currently Booked' to show high demand")
+    print("🚤 New: Boat Rentals & Docks category added with insurance + deposit requirements")
     
     client.close()
 
