@@ -11,9 +11,15 @@ export default function LegalFooter() {
         DriveShare & Dock is a platform provider and does not provide insurance
         or legal representation.
       </Text>
-      <TouchableOpacity onPress={() => router.push('/legal/terms')}>
-        <Text style={styles.link}>Terms of Service</Text>
-      </TouchableOpacity>
+      <View style={styles.linkRow}>
+        <TouchableOpacity onPress={() => router.push('/legal/terms')}>
+          <Text style={styles.link}>Terms of Service</Text>
+        </TouchableOpacity>
+        <Text style={styles.separator}>·</Text>
+        <TouchableOpacity onPress={() => router.push('/legal/privacy')}>
+          <Text style={styles.link}>Privacy Policy</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -34,10 +40,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 16,
   },
+  linkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.sm,
+  },
   link: {
     fontSize: 12,
     color: COLORS.primary,
     fontWeight: '600',
     textDecorationLine: 'underline',
+  },
+  separator: {
+    fontSize: 12,
+    color: COLORS.textLight,
   },
 });
