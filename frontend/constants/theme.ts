@@ -3,6 +3,8 @@ export const COLORS = {
   primary: '#1B4332',      // Deep Forest
   secondary: '#2D6A4F',    // Mid Forest
   accent: '#40916C',       // Light Forest
+  coral: '#E76F51',        // Coral Orange - CTA accent
+  coralDark: '#D65A3C',    // Coral Orange pressed state
   background: '#F8F9FA',   // Off-white
   surface: '#FFFFFF',      // White
   text: '#212529',         // Dark Gray

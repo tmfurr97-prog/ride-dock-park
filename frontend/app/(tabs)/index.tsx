@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   TextInput,
   Image,
-  FlatList,
   Alert,
   RefreshControl,
 } from 'react-native';
@@ -139,61 +138,10 @@ export default function Browse() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <View style={styles.header}>
-        <View style={styles.searchBar}>
-          <Ionicons name="search" size={20} color={COLORS.textLight} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search listings..."
-            placeholderTextColor={COLORS.textLight}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleSearch}
-            returnKeyType="search"
-          />
-        </View>
-        <TouchableOpacity style={styles.createButton} onPress={handleCreateListing}>
-          <Ionicons name="add-circle" size={24} color={COLORS.primary} />
-        </TouchableOpacity>
-      </View>
-
       <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoryScroll}
-        contentContainerStyle={styles.categoryContainer}
-      >
-        {CATEGORIES.map((cat) => (
-          <TouchableOpacity
-            key={cat.id}
-            style={[
-              styles.categoryChip,
-              selectedCategory === cat.id && styles.categoryChipActive,
-            ]}
-            onPress={() => setSelectedCategory(cat.id)}
-          >
-            <Ionicons
-              name={cat.icon as any}
-              size={18}
-              color={selectedCategory === cat.id ? COLORS.surface : COLORS.primary}
-            />
-            <Text
-              style={[
-                styles.categoryText,
-                selectedCategory === cat.id && styles.categoryTextActive,
-              ]}
-            >
-              {cat.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      <FlatList
-        data={listings}
-        renderItem={renderListingCard}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        stickyHeaderIndices={[]}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 0 }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -204,14 +152,115 @@ export default function Browse() {
             tintColor={COLORS.primary}
           />
         }
-        ListEmptyComponent={
+      >
+        {/* HERO BANNER */}
+        <View style={styles.hero}>
+          <View style={styles.heroTopRow}>
+            <View>
+              <Text style={styles.heroBrand}>DriveShare & Dock</Text>
+              <Text style={styles.heroTagline}>
+                Where your adventure begins
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.createIconBtn} onPress={handleCreateListing}>
+              <Ionicons name="add-circle" size={32} color={COLORS.coral} />
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.heroHeadline}>
+            RVs, land, storage & boats.{'\n'}All in one place.
+          </Text>
+        </View>
+
+        {/* SEARCH CARD (overlaps hero) */}
+        <View style={styles.searchCardWrap}>
+          <View style={styles.searchCard}>
+            <View style={styles.searchRow}>
+              <Ionicons name="search" size={20} color={COLORS.textLight} />
+              <TextInput
+                style={styles.searchInputBig}
+                placeholder="Where to? (e.g., Lake of the Ozarks)"
+                placeholderTextColor={COLORS.textLight}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                onSubmitEditing={handleSearch}
+                returnKeyType="search"
+              />
+            </View>
+            <View style={styles.searchDivider} />
+            <View style={styles.searchMetaRow}>
+              <View style={styles.searchMetaItem}>
+                <Ionicons name="calendar-outline" size={16} color={COLORS.textLight} />
+                <Text style={styles.searchMetaText}>Any dates</Text>
+              </View>
+              <View style={styles.searchMetaDot} />
+              <View style={styles.searchMetaItem}>
+                <Ionicons name="people-outline" size={16} color={COLORS.textLight} />
+                <Text style={styles.searchMetaText}>Add guests</Text>
+              </View>
+            </View>
+            <TouchableOpacity style={styles.searchBtn} onPress={handleSearch}>
+              <Ionicons name="search" size={18} color={COLORS.surface} />
+              <Text style={styles.searchBtnText}>Search</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* CATEGORY CHIPS */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoryScroll}
+          contentContainerStyle={styles.categoryContainer}
+        >
+          {CATEGORIES.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[
+                styles.categoryChip,
+                selectedCategory === cat.id && styles.categoryChipActive,
+              ]}
+              onPress={() => setSelectedCategory(cat.id)}
+            >
+              <Ionicons
+                name={cat.icon as any}
+                size={18}
+                color={selectedCategory === cat.id ? COLORS.surface : COLORS.primary}
+              />
+              <Text
+                style={[
+                  styles.categoryText,
+                  selectedCategory === cat.id && styles.categoryTextActive,
+                ]}
+              >
+                {cat.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* SECTION HEADING */}
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>Favorites nearby</Text>
+          <Text style={styles.sectionSubtitle}>
+            Hand-picked spots trusted by travelers
+          </Text>
+        </View>
+
+        {/* LISTINGS GRID (inline, not FlatList since we're inside ScrollView) */}
+        {listings.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="folder-open-outline" size={64} color={COLORS.textLight} />
             <Text style={styles.emptyText}>No listings found</Text>
             <Text style={styles.emptySubtext}>Try a different search or category</Text>
           </View>
-        }
-      />
+        ) : (
+          <View style={styles.listContent}>
+            {listings.map((item: any) => (
+              <View key={item.id}>{renderListingCard({ item })}</View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
       <LegalFooter />
     </SafeAreaView>
   );
@@ -222,36 +271,126 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
-  header: {
+  hero: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.xxl + SPACING.md, // extra room for search card overlap
+  },
+  heroTopRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: SPACING.md,
+  },
+  heroBrand: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: COLORS.surface,
+    letterSpacing: 0.3,
+  },
+  heroTagline: {
+    fontSize: 13,
+    color: '#B7E4C7',
+    marginTop: 2,
+  },
+  createIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroHeadline: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: COLORS.surface,
+    lineHeight: 34,
+    marginTop: SPACING.sm,
+  },
+  searchCardWrap: {
+    marginTop: -SPACING.xl - 4,
+    paddingHorizontal: SPACING.md,
+  },
+  searchCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
     padding: SPACING.md,
     gap: SPACING.sm,
-    backgroundColor: COLORS.surface,
+    ...SHADOWS.medium,
   },
-  searchBar: {
-    flex: 1,
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: COLORS.background,
-    borderRadius: 8,
-    paddingHorizontal: SPACING.md,
     gap: SPACING.sm,
   },
-  searchInput: {
+  searchInputBig: {
     flex: 1,
     fontSize: 16,
     color: COLORS.text,
     paddingVertical: SPACING.sm,
   },
-  createButton: {
-    justifyContent: 'center',
+  searchDivider: {
+    height: 1,
+    backgroundColor: COLORS.border,
+  },
+  searchMetaRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: SPACING.sm,
+    gap: SPACING.sm,
+    paddingVertical: SPACING.xs,
+  },
+  searchMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    flex: 1,
+  },
+  searchMetaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: COLORS.border,
+  },
+  searchMetaText: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    fontWeight: '500',
+  },
+  searchBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: SPACING.xs,
+    backgroundColor: COLORS.coral,
+    paddingVertical: SPACING.md,
+    borderRadius: 10,
+    marginTop: SPACING.xs,
+  },
+  searchBtnText: {
+    color: COLORS.surface,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  sectionHead: {
+    paddingHorizontal: SPACING.lg,
+    paddingTop: SPACING.lg,
+    paddingBottom: SPACING.sm,
+  },
+  sectionTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.text,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    color: COLORS.textLight,
+    marginTop: 2,
   },
   categoryScroll: {
-    backgroundColor: COLORS.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    backgroundColor: 'transparent',
+    marginTop: SPACING.md,
   },
   categoryContainer: {
     paddingHorizontal: SPACING.md,
@@ -312,7 +451,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: SPACING.xs,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.coral,
     paddingHorizontal: SPACING.md,
     paddingVertical: SPACING.sm,
     borderRadius: 20,

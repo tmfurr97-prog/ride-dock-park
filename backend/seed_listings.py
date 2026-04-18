@@ -1,6 +1,7 @@
 """
-Seed script for DriveShare & Dock
-Creates 5 premium mock listings for social proof
+DriveShare & Dock — Seed Premium Listings
+Creates 6 curated listings showcasing high-value rentals across all categories.
+All listings are marked status='booked' to reflect active demand.
 """
 import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -13,7 +14,7 @@ load_dotenv()
 MONGO_URL = os.getenv("MONGO_URL")
 DB_NAME = os.getenv("DB_NAME")
 
-# Mock listings data
+# Premium featured listings
 MOCK_LISTINGS = [
     {
         "owner_id": "seed_user_1",
