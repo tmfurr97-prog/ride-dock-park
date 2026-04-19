@@ -181,7 +181,13 @@ export default function ListingDetail() {
         >
           <Ionicons name="arrow-back" size={24} color={COLORS.surface} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Listing Details</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.replace('/(tabs)')}
+        >
+          <Ionicons name="home" size={22} color={COLORS.surface} />
+        </TouchableOpacity>
+        <Text style={[styles.headerTitle, { flex: 1, textAlign: 'center' }]}>Details</Text>
         <TouchableOpacity
           style={styles.backButton}
           onPress={async () => {

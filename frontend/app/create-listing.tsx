@@ -940,7 +940,7 @@ export default function CreateListing() {
           <Ionicons name="arrow-back" size={24} color={COLORS.surface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Create Listing</Text>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace("/(tabs)")}><Ionicons name="home" size={22} color={"#FFFFFF"} /></TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView

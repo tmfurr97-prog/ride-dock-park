@@ -99,7 +99,7 @@ export default function TermsOfService() {
           <Ionicons name="arrow-back" size={24} color={COLORS.surface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Terms of Service</Text>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity style={styles.backButton} onPress={() => router.replace("/(tabs)")}><Ionicons name="home" size={22} color={"#FFFFFF"} /></TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
