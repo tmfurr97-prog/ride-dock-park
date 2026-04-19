@@ -21,7 +21,7 @@ export default function Index() {
   return (
     <View style={styles.container}>
       <ActivityIndicator size="large" color={COLORS.primary} />
-      <Text style={styles.text}>DriveShare & Dock</Text>
+      <Text style={styles.text}>FurrstCamp Travel</Text>
     </View>
   );
 }

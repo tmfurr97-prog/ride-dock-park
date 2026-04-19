@@ -45,7 +45,7 @@ export default function Profile() {
     },
     {
       icon: 'checkmark-circle',
-      label: user?.is_verified ? 'Verified Account' : 'Complete Verification ($25)',
+      label: user?.is_verified ? 'Verified Account' : 'Complete Furrst-Check ($14.99)',
       onPress: () => !user?.is_verified && router.push('/verification'),
       badge: !user?.is_verified,
       show: true,

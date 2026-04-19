@@ -68,7 +68,7 @@ export default function Browse() {
     if (!user?.is_verified) {
       Alert.alert(
         'Verification Required',
-        'You must complete the $25 verification to create listings.',
+        'You must complete the $14.99 Furrst-Check to create listings.',
         [
           { text: 'Cancel', style: 'cancel' },
           { text: 'Verify Now', onPress: () => router.push('/verification') },
@@ -157,9 +157,9 @@ export default function Browse() {
         <View style={styles.hero}>
           <View style={styles.heroTopRow}>
             <View>
-              <Text style={styles.heroBrand}>DriveShare & Dock</Text>
+              <Text style={styles.heroBrand}>FurrstCamp Travel</Text>
               <Text style={styles.heroTagline}>
-                Where your adventure begins
+                The Gold Standard of Verified Outdoor Stays
               </Text>
             </View>
             <TouchableOpacity style={styles.createIconBtn} onPress={handleCreateListing}>

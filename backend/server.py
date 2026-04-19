@@ -45,7 +45,8 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Stripe setup
 STRIPE_API_KEY = os.getenv("STRIPE_API_KEY")
-VERIFICATION_AMOUNT = 25.00  # Fixed $25 verification fee
+VERIFICATION_AMOUNT = 14.99  # Renter "Furrst-Check" verification
+HOST_AUTHENTICITY_FEE = 9.99  # Host "Furrst-Check" authenticity fee
 
 # Platform commission config
 PLATFORM_COMMISSION_INTRO_RATE = 0.10  # 10% for first 6 months after host joined
@@ -138,6 +139,8 @@ class ListingCreate(BaseModel):
     accepts_hourly: Optional[bool] = False
     hourly_rate: Optional[float] = 0.0
     max_rv_length: Optional[float] = 0.0  # in feet; 0 = not applicable
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 class ListingResponse(BaseModel):
     id: str
@@ -329,7 +332,162 @@ async def create_verification_checkout(
     
     return {"url": session.url, "session_id": session.session_id}
 
-@app.get("/api/payments/verification/status/{session_id}")
+@app.post("/api/payments/booking/create-checkout")
+async def create_booking_checkout(
+    request: Request,
+    booking_id: str,
+    origin_url: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Charge the guest for their booking via Stripe Checkout."""
+    try:
+        booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("guest_id") != current_user["_id"]:
+        raise HTTPException(status_code=403, detail="Only the guest can pay for this booking")
+    if booking.get("payment_status") == "paid":
+        raise HTTPException(status_code=400, detail="Booking already paid")
+    
+    base_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{base_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    
+    success_url = f"{origin_url}/booking-success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin_url}/(tabs)/bookings"
+    
+    amount = float(booking.get("total_price", 0))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Invalid booking amount")
+    
+    checkout_request = CheckoutSessionRequest(
+        amount=amount,
+        currency="usd",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "user_id": current_user["_id"],
+            "type": "booking",
+            "booking_id": booking_id,
+            "email": current_user["email"]
+        }
+    )
+    session: CheckoutSessionResponse = await stripe_checkout.create_checkout_session(checkout_request)
+    
+    await db.payment_transactions.insert_one({
+        "user_id": current_user["_id"],
+        "email": current_user["email"],
+        "session_id": session.session_id,
+        "amount": amount,
+        "currency": "usd",
+        "type": "booking",
+        "booking_id": booking_id,
+        "payment_status": "initiated",
+        "status": "pending",
+        "created_at": datetime.utcnow().isoformat()
+    })
+    await db.bookings.update_one(
+        {"_id": ObjectId(booking_id)},
+        {"$set": {"payment_session_id": session.session_id, "payment_status": "initiated"}}
+    )
+    return {"url": session.url, "session_id": session.session_id}
+
+@app.post("/api/payments/host-authenticity/create-checkout")
+async def create_host_auth_checkout(
+    request: Request,
+    origin_url: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """One-time $9.99 Host Authenticity Furrst-Check fee."""
+    if current_user.get("host_verified"):
+        raise HTTPException(status_code=400, detail="Already host-verified")
+    
+    base_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{base_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    
+    success_url = f"{origin_url}/host-verification-success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin_url}/(tabs)/profile"
+    
+    checkout_request = CheckoutSessionRequest(
+        amount=HOST_AUTHENTICITY_FEE,
+        currency="usd",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "user_id": current_user["_id"],
+            "type": "host_authenticity",
+            "email": current_user["email"]
+        }
+    )
+    session: CheckoutSessionResponse = await stripe_checkout.create_checkout_session(checkout_request)
+    
+    await db.payment_transactions.insert_one({
+        "user_id": current_user["_id"],
+        "email": current_user["email"],
+        "session_id": session.session_id,
+        "amount": HOST_AUTHENTICITY_FEE,
+        "currency": "usd",
+        "type": "host_authenticity",
+        "payment_status": "initiated",
+        "status": "pending",
+        "created_at": datetime.utcnow().isoformat()
+    })
+    return {"url": session.url, "session_id": session.session_id}
+
+@app.get("/api/payments/booking/status/{session_id}")
+async def check_booking_payment_status(
+    session_id: str,
+    request: Request,
+    current_user: dict = Depends(get_current_user)
+):
+    payment = await db.payment_transactions.find_one({
+        "user_id": current_user["_id"],
+        "session_id": session_id
+    })
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    if payment["payment_status"] == "paid":
+        return {"status": "paid", "amount": payment["amount"]}
+    
+    base_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{base_url}/api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    checkout_status: CheckoutStatusResponse = await stripe_checkout.get_checkout_status(session_id)
+    
+    if checkout_status.payment_status == "paid" and payment["payment_status"] != "paid":
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"payment_status": "paid", "status": "completed",
+                      "completed_at": datetime.utcnow().isoformat()}}
+        )
+        # Mark booking as paid
+        booking_id = payment.get("booking_id")
+        if booking_id:
+            try:
+                await db.bookings.update_one(
+                    {"_id": ObjectId(booking_id)},
+                    {"$set": {"payment_status": "paid",
+                              "paid_at": datetime.utcnow().isoformat()}}
+                )
+            except Exception:
+                pass
+        # Mark host as authenticity-verified
+        if payment.get("type") == "host_authenticity":
+            await db.users.update_one(
+                {"_id": ObjectId(current_user["_id"])},
+                {"$set": {"host_verified": True,
+                          "host_verified_at": datetime.utcnow().isoformat()}}
+            )
+    
+    return {
+        "status": checkout_status.payment_status,
+        "amount": payment["amount"]
+    }
+
 async def check_verification_status(
     session_id: str,
     request: Request,
@@ -491,6 +649,8 @@ async def create_listing(
         "accepts_hourly": bool(listing.accepts_hourly),
         "hourly_rate": float(listing.hourly_rate or 0),
         "max_rv_length": float(listing.max_rv_length or 0),
+        "latitude": float(listing.latitude) if listing.latitude is not None else None,
+        "longitude": float(listing.longitude) if listing.longitude is not None else None,
         "status": "active",
         "created_at": datetime.utcnow().isoformat()
     }
@@ -580,6 +740,105 @@ async def delete_listing(listing_id: str, current_user: dict = Depends(get_curre
 
 # =====================
 # BOOKINGS ENDPOINTS
+# =====================
+# FAVORITES ENDPOINTS
+# =====================
+import math
+
+def haversine_miles(lat1, lon1, lat2, lon2):
+    if None in (lat1, lon1, lat2, lon2):
+        return None
+    R = 3958.8
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp/2)**2 + math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2
+    return 2 * R * math.asin(math.sqrt(a))
+
+@app.get("/api/listings/nearby")
+async def nearby_listings(
+    lat: float,
+    lng: float,
+    radius_miles: float = 50,
+    category: Optional[str] = None
+):
+    """Return listings within radius_miles of (lat, lng), sorted by distance."""
+    query: Dict[str, Any] = {
+        "status": "active",
+        "latitude": {"$ne": None},
+        "longitude": {"$ne": None}
+    }
+    if category:
+        query["category"] = category
+    
+    cursor = db.listings.find(query).limit(500)
+    results = []
+    async for listing in cursor:
+        dist = haversine_miles(lat, lng, listing.get("latitude"), listing.get("longitude"))
+        if dist is not None and dist <= radius_miles:
+            listing["id"] = str(listing["_id"])
+            listing["distance_miles"] = round(dist, 2)
+            listing.pop("_id", None)
+            results.append(listing)
+    results.sort(key=lambda x: x.get("distance_miles", 9999))
+    return {"listings": results, "count": len(results)}
+
+@app.post("/api/favorites/{listing_id}")
+async def add_favorite(
+    listing_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Toggle favorite on a listing (add if not present)."""
+    try:
+        listing = await db.listings.find_one({"_id": ObjectId(listing_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid listing ID")
+    if not listing:
+        raise HTTPException(status_code=404, detail="Listing not found")
+    
+    existing = await db.favorites.find_one({
+        "user_id": current_user["_id"],
+        "listing_id": listing_id
+    })
+    if existing:
+        return {"favorited": True, "message": "Already favorited"}
+    
+    await db.favorites.insert_one({
+        "user_id": current_user["_id"],
+        "listing_id": listing_id,
+        "created_at": datetime.utcnow().isoformat()
+    })
+    return {"favorited": True, "message": "Added to favorites"}
+
+@app.delete("/api/favorites/{listing_id}")
+async def remove_favorite(
+    listing_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    result = await db.favorites.delete_one({
+        "user_id": current_user["_id"],
+        "listing_id": listing_id
+    })
+    return {"favorited": False, "removed": result.deleted_count > 0}
+
+@app.get("/api/favorites")
+async def list_favorites(current_user: dict = Depends(get_current_user)):
+    favs = []
+    async for fav in db.favorites.find({"user_id": current_user["_id"]}):
+        try:
+            listing = await db.listings.find_one({"_id": ObjectId(fav["listing_id"])})
+            if listing:
+                listing["id"] = str(listing["_id"])
+                listing["favorited_at"] = fav.get("created_at")
+                listing.pop("_id", None)
+                favs.append(listing)
+        except Exception:
+            continue
+    return favs
+
+# =====================
+# BOOKINGS ENDPOINTS
+# =====================
 # =====================
 @app.post("/api/bookings")
 async def create_booking(
@@ -1140,7 +1399,7 @@ async def get_all_payments(
 
 @app.get("/")
 async def root():
-    return {"message": "DriveShare & Dock API"}
+    return {"message": "FurrstCamp Travel API"}
 
 if __name__ == "__main__":
     import uvicorn

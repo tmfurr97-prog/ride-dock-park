@@ -15,7 +15,7 @@ const SECTIONS = [
   {
     title: '1. Introduction',
     body:
-      'DriveShare & Dock ("we", "our", "us") respects your privacy. This Privacy Policy explains what data we collect, how we use it, and your rights. By using our Platform, you consent to the practices described here.',
+      'FurrstCamp Travel ("we", "our", "us") respects your privacy. This Privacy Policy explains what data we collect, how we use it, and your rights. By using our Platform, you consent to the practices described here.',
   },
   {
     title: '2. Information We Collect',
@@ -55,12 +55,12 @@ const SECTIONS = [
   {
     title: '9. Your Rights',
     body:
-      'You may:\n• Access, correct, or delete your account data.\n• Export your data in a portable format.\n• Opt out of non-essential communications.\n• Object to or restrict certain processing (EU/UK/CA residents).\n• Lodge a complaint with a supervisory authority.\n\nTo exercise these rights, email privacy@driveshareanddock.com. We respond within 30 days.',
+      'You may:\n• Access, correct, or delete your account data.\n• Export your data in a portable format.\n• Opt out of non-essential communications.\n• Object to or restrict certain processing (EU/UK/CA residents).\n• Lodge a complaint with a supervisory authority.\n\nTo exercise these rights, email privacy@furrstcamp.travel. We respond within 30 days.',
   },
   {
     title: '10. California Privacy (CCPA/CPRA)',
     body:
-      'California residents have additional rights: to know what personal information is collected, to delete it, to correct it, and to opt out of sale/share. We do not sell personal information. Requests: privacy@driveshareanddock.com.',
+      'California residents have additional rights: to know what personal information is collected, to delete it, to correct it, and to opt out of sale/share. We do not sell personal information. Requests: privacy@furrstcamp.travel.',
   },
   {
     title: '11. Children',
@@ -85,7 +85,7 @@ const SECTIONS = [
   {
     title: '15. Contact Us',
     body:
-      'Privacy inquiries: privacy@driveshareanddock.com\nData Protection Officer: dpo@driveshareanddock.com\n\nEffective date: June 2025.',
+      'Privacy inquiries: privacy@furrstcamp.travel\nData Protection Officer: dpo@furrstcamp.travel\n\nEffective date: June 2025.',
   },
 ];
 
@@ -104,7 +104,7 @@ export default function PrivacyPolicy() {
 
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.intro}>
-          Your privacy matters. This policy explains how DriveShare & Dock
+          Your privacy matters. This policy explains how FurrstCamp Travel
           collects, uses, and protects your information.
         </Text>
 

@@ -60,7 +60,7 @@ export default function Login() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <Text style={styles.title}>DriveShare & Dock</Text>
+            <Text style={styles.title}>FurrstCamp Travel</Text>
             <Text style={styles.subtitle}>Welcome Back</Text>
           </View>
 

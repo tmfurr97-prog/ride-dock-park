@@ -86,7 +86,7 @@ export default function Register() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.header}>
-            <Text style={styles.title}>Join DriveShare & Dock</Text>
+            <Text style={styles.title}>Join FurrstCamp Travel</Text>
             <Text style={styles.subtitle}>Create your account</Text>
           </View>
 
@@ -176,7 +176,7 @@ export default function Register() {
                 >
                   Terms of Service
                 </Text>
-                {' '}and acknowledge that DriveShare & Dock is a platform
+                {' '}and acknowledge that FurrstCamp Travel is a platform
                 provider and does not provide insurance or legal representation.
               </Text>
             </TouchableOpacity>

@@ -1,9 +1,9 @@
 """
-Idempotent admin user bootstrap for DriveShare & Dock.
+Idempotent admin user bootstrap for FurrstCamp Travel.
 Safe to run multiple times — always resets the admin password hash
 to the documented credential.
 
-Documented admin: admin@driveshare.com / Admin123!
+Documented admin: admin@furrstcamp.com / Admin123!
 """
 import asyncio
 import os
@@ -18,9 +18,9 @@ load_dotenv()
 MONGO_URL = os.getenv("MONGO_URL")
 DB_NAME = os.getenv("DB_NAME")
 
-ADMIN_EMAIL = "admin@driveshare.com"
+ADMIN_EMAIL = "admin@furrstcamp.com"
 ADMIN_PASSWORD = "Admin123!"
-ADMIN_NAME = "DriveShare Admin"
+ADMIN_NAME = "FurrstCamp Admin"
 ADMIN_PHONE = "+15555550100"
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

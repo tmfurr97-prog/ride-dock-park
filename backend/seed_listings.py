@@ -1,5 +1,5 @@
 """
-DriveShare & Dock — Seed Premium Listings
+FurrstCamp Travel — Seed Premium Listings
 Creates 6 curated listings showcasing high-value rentals across all categories.
 All listings are marked status='booked' to reflect active demand.
 """
@@ -267,7 +267,7 @@ async def seed_database():
     client = AsyncIOMotorClient(MONGO_URL)
     db = client[DB_NAME]
     
-    print("🌱 Seeding DriveShare & Dock with premium listings...")
+    print("🌱 Seeding FurrstCamp Travel with premium listings...")
     
     # Check if seed listings already exist
     existing = await db.listings.count_documents({"owner_id": {"$regex": "^seed_user_"}})

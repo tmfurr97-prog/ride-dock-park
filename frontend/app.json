@@ -1,27 +1,69 @@
 {
   "expo": {
-    "name": "frontend",
-    "slug": "frontend",
+    "name": "FurrstCamp Travel",
+    "slug": "furrstcamp-travel",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "frontend",
+    "scheme": "furrstcamp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
+    "description": "The Gold Standard of Verified Outdoor Stays. The #1 marketplace alternative to HipCamp, RVShare, FirstCamp, and Hi-Camp. Book RVs, campgrounds, private land, vehicle storage, and boats & docks — all with verified hosts, insurance-backed rentals, and refundable deposits.",
+    "keywords": [
+      "FurrstCamp",
+      "Furrst Camp",
+      "First Camp",
+      "HipCamp",
+      "Hi-Camp",
+      "Hi Camp",
+      "RVShare",
+      "RV Share",
+      "RVLBO",
+      "Vanly",
+      "Outdoorsy",
+      "RV rental",
+      "camper van rental",
+      "boat rental",
+      "dock rental",
+      "land stay",
+      "RV lot rental",
+      "boondocking",
+      "glamping",
+      "RV parking",
+      "vehicle storage",
+      "camping marketplace",
+      "verified outdoor stays"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.furrstcamp.travel"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000"
+        "backgroundColor": "#1B4332"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.furrstcamp.travel",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE"
+      ]
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "FurrstCamp Travel — The Gold Standard of Verified Outdoor Stays",
+      "shortName": "FurrstCamp",
+      "description": "Book verified RVs, campgrounds, land stays, storage & boats. The trusted alternative to HipCamp, RVShare, and FirstCamp.",
+      "themeColor": "#1B4332",
+      "backgroundColor": "#F8F9FA",
+      "display": "standalone",
+      "orientation": "portrait",
+      "lang": "en-US"
     },
     "plugins": [
       "expo-router",
@@ -31,7 +73,13 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000"
+          "backgroundColor": "#1B4332"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Find verified outdoor stays near you."
         }
       ]
     ],

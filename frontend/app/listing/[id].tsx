@@ -33,6 +33,7 @@ export default function ListingDetail() {
   const [endDate, setEndDate] = useState('');
   const [bookingTosAccepted, setBookingTosAccepted] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(false);
 
   useEffect(() => {
     loadListing();
@@ -108,11 +109,33 @@ export default function ListingDetail() {
       const statusMsg =
         response.data.status === 'awaiting_insurance_review'
           ? "\n\nYour booking is pending the host's insurance approval."
+          : response.data.status === 'awaiting_host_approval'
+          ? "\n\nYour booking is pending host approval."
           : '';
+
+      // Initiate payment immediately — charge held until host approves
+      try {
+        const originUrl = (process.env.EXPO_PUBLIC_BACKEND_URL || '').replace('/api', '');
+        const payRes = await api.post(
+          `/api/payments/booking/create-checkout?booking_id=${response.data.id}&origin_url=${encodeURIComponent(originUrl)}`
+        );
+        if (payRes.data?.url) {
+          setShowBookingModal(false);
+          // Open Stripe Checkout
+          if (typeof window !== 'undefined') {
+            window.location.href = payRes.data.url;
+          } else {
+            Alert.alert('Open Payment', `Go to: ${payRes.data.url}`);
+          }
+          return;
+        }
+      } catch (payErr: any) {
+        console.log('Payment session error:', payErr);
+      }
 
       Alert.alert(
         'Booking Requested!',
-        `Total charged: $${response.data.total_price.toFixed(2)}` +
+        `Total: $${response.data.total_price.toFixed(2)}` +
           (response.data.security_deposit
             ? `\n(includes $${response.data.security_deposit} refundable deposit hold)`
             : '') +
@@ -159,7 +182,28 @@ export default function ListingDetail() {
           <Ionicons name="arrow-back" size={24} color={COLORS.surface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Listing Details</Text>
-        <View style={styles.headerSpacer} />
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={async () => {
+            try {
+              if (isFavorite) {
+                await api.delete(`/api/favorites/${listing.id}`);
+                setIsFavorite(false);
+              } else {
+                await api.post(`/api/favorites/${listing.id}`);
+                setIsFavorite(true);
+              }
+            } catch (e) {
+              Alert.alert('Error', 'Please log in to save favorites');
+            }
+          }}
+        >
+          <Ionicons
+            name={isFavorite ? 'heart' : 'heart-outline'}
+            size={24}
+            color={isFavorite ? COLORS.coral : COLORS.surface}
+          />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -427,7 +471,7 @@ export default function ListingDetail() {
                   >
                     Terms of Service
                   </Text>
-                  , and accept that DriveShare & Dock is a platform provider and
+                  , and accept that FurrstCamp Travel is a platform provider and
                   does not provide insurance or legal representation.
                 </Text>
               </TouchableOpacity>

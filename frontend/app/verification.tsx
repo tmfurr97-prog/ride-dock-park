@@ -119,7 +119,7 @@ export default function Verification() {
 
         <View style={styles.priceCard}>
           <Text style={styles.priceLabel}>One-time fee</Text>
-          <Text style={styles.price}>$25.00</Text>
+          <Text style={styles.price}>$14.99</Text>
           <Text style={styles.priceNote}>Secure payment via Stripe</Text>
         </View>
 
