@@ -400,8 +400,69 @@ metadata:
         agent: "testing"
         comment: "Verified end-to-end. (5a-c) Hourly booking on land_stay (accepts_hourly=true, hourly_rate=15) with 4-hour span → 200, unit_label='hour', units=4, base_subtotal=60.00 (15*4), is_hourly=true persisted. (5d) is_hourly=true on RV listing (accepts_hourly=false) → 400 'Invalid day range' (falls back to daily math, 4-hour span < 1 day → 400). No 500 — acceptable per spec. (5e) is_hourly omitted on land_stay with 3-day span → 200, unit_label='day', units=3, base_subtotal=135.00 (45*3). All hourly math correct. 10/10 assertions pass."
 
+  - task: "Updated Furrst-Check verification fee = $14.99"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "Verified end-to-end. Registered fresh user and called POST /api/payments/verification/create-checkout?origin_url=https://example.com → 200 with url + session_id. payment_transactions record has amount=14.99 (updated from previous 25.00) and type='verification'. 4/4 assertions PASS."
+
+  - task: "Host Authenticity fee = $9.99"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "POST /api/payments/host-authenticity/create-checkout?origin_url=https://example.com (as admin, host_verified=false) → 200 with url + session_id. payment_transactions record has amount=9.99 and type='host_authenticity'. Second call after marking host_verified=true → 400 'Already host-verified'. 4/4 assertions PASS."
+
+  - task: "Booking Payment Checkout"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "End-to-end verified. (a) Admin created a land_stay listing. (b) Fresh guest registered, admin-verified, and posted a booking with tos_accepted=true → 200 (status='awaiting_host_approval'). (c) Guest POST /api/payments/booking/create-checkout?booking_id=<id>&origin_url=https://example.com → 200 with url + session_id. (d) Booking updated: payment_session_id set, payment_status='initiated'. (e) Non-guest (admin) calling same endpoint → 403 'Only the guest can pay for this booking'. 7/7 assertions PASS."
+
+  - task: "Favorites CRUD"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "testing"
+        comment: "All CRUD flows verified as admin. POST /api/favorites/{listing_id} → 200 {favorited:true}. Second POST → 200 {favorited:true, message:'Already favorited'}. GET /api/favorites → 200 with array containing the listing (favorited_at timestamp populated). DELETE /api/favorites/{listing_id} → 200 {favorited:false, removed:true}. Subsequent GET /api/favorites → empty array. 7/7 assertions PASS."
+
+  - task: "Nearby listings (Haversine)"
+    implemented: true
+    working: false
+    file: "/app/backend/server.py"
+    stuck_count: 1
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: false
+        agent: "testing"
+        comment: "CRITICAL ROUTE-ORDERING BUG. GET /api/listings/nearby?lat=34.05&lng=-118.25&radius_miles=10 returns 400 {\"detail\":\"Invalid listing ID\"}. Root cause: in server.py, @app.get('/api/listings/{listing_id}') is declared at line ~693 BEFORE @app.get('/api/listings/nearby') at line ~758. FastAPI matches routes in declaration order, so the path 'nearby' is captured by the {listing_id} handler, which then calls ObjectId('nearby') and 400s. FIX (main agent): move the nearby_listings() function definition ABOVE get_listing() / any path-param listings route. Verified by direct curl: `curl 'https://forest-dock.preview.emergentagent.com/api/listings/nearby?lat=34.05&lng=-118.25&radius_miles=10'` → 400 'Invalid listing ID'. LA land_stay listing created successfully (lat=34.0522 lng=-118.2437) and LA boat listing created successfully, but nearby lookup is unreachable due to this route shadowing. Tests 5d/5e/5f/5g/5h could not be fully executed because 5c fails first."
+
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Nearby listings (Haversine)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -417,3 +478,5 @@ agent_communication:
     message: "Post-dependency-upgrade regression smoke test (fastapi 0.110→0.136, starlette 0.37→1.0, pymongo 4.5→4.16, motor 3.3→3.7, python-multipart→0.0.26, aiohttp→3.13.5, litellm→1.83.9, bcrypt→4.3.0) — ALL 5/5 SMOKE TESTS PASS against https://forest-dock.preview.emergentagent.com/api via /app/smoke_test.py. (1) POST /api/auth/login admin@driveshare.com/Admin123! → 200, returned {token, user}. (2) GET /api/listings → 200, count=11, includes 'The Blue Water Pontoon - 24ft Premium w/ 150HP Mercury'. (3) GET /api/listings?category=boat_rental → 200, count=3, all have category=boat_rental. (4) POST /api/auth/register with fresh email + accepted_tos=true → 200 with token. (5) POST /api/auth/register without accepted_tos → 400 'You must agree to the Terms of Service to create an account.' Backend supervisor healthy; motor/pymongo import worked (earlier ImportError in backend.err.log was from a prior reload cycle — current process is serving 200s). No regressions detected in happy path. Previously-green features not re-tested exhaustively per request."
   - agent: "testing"
     message: "Legal Armor backend tests: ALL 19/19 assertions PASS in /app/backend_test.py. (1) ToS on registration: missing/false → 400, true → 200+token. (2) ToS on booking: missing/false → 400, true → 200 with status='pending' for land_stay listing. (3) RV listing without insurance_proof → 400, with insurance_proof → 200. (4) Insurance gate on RV bookings: new RV booking → status='awaiting_insurance_review' & insurance_accepted=false; non-host accept → 403; host accept → 200 {status:confirmed}, GET /bookings/host confirms status=confirmed & insurance_accepted=true; second booking host reject → 200 {status:cancelled}; accept on cancelled → 400; land/storage booking bypasses the gate (status='pending'). ⚠️ MINOR (non-blocking): seeded land_stay/vehicle_storage listings have synthetic owner_id strings like 'seed_user_5' that are NOT valid Mongo ObjectIds — POST /api/bookings against those seeded listings 400s with 'is not a valid ObjectId' because the booking endpoint calls ObjectId(listing['owner_id']) to compute host commission tenure. Production listings created via the API are unaffected since owner_id is always a real ObjectId string. Consider either (a) fixing the seed script to use real user ObjectIds, or (b) making the booking endpoint tolerant of non-ObjectId owner_ids (e.g. fall back to find_one({'_id'|'id': ...}) or skip commission-tenure lookup when owner_id isn't an ObjectId). No admin-password-hash drift this run — admin@driveshare.com / Admin123! worked as documented."
+  - agent: "testing"
+    message: "NEW-FEATURE round: 24/25 assertions PASS in /app/backend_test.py. PASSING: (1) Verification fee = $14.99 — fresh user POST /api/payments/verification/create-checkout returns 200 with url+session_id, DB payment_transactions.amount=14.99, type='verification'. (2) Host Authenticity fee = $9.99 — admin POST /api/payments/host-authenticity/create-checkout returns 200, DB amount=9.99, type='host_authenticity'; second call after host_verified=true → 400. (3) Booking Payment Checkout — admin creates land_stay, fresh verified guest books with tos_accepted=true → 200 (status='awaiting_host_approval'), guest POST /api/payments/booking/create-checkout returns 200 w/ url+session_id, booking.payment_session_id & payment_status='initiated' set; admin (non-guest) → 403. (4) Favorites CRUD — add/dedupe/list/remove/list all behave as specified, including favorited_at field. ❌ FAILING: (5) Nearby listings (/api/listings/nearby) returns 400 'Invalid listing ID'. ROOT CAUSE = ROUTE ORDERING in /app/backend/server.py: @app.get('/api/listings/{listing_id}') is declared (~line 693) BEFORE @app.get('/api/listings/nearby') (~line 758). FastAPI resolves by registration order so the literal path 'nearby' is captured by the {listing_id} handler, which calls ObjectId('nearby') → 400. FIX: main agent must move the `nearby_listings()` route (and its helper `haversine_miles()`) ABOVE the `/api/listings/{listing_id}` route, OR add an explicit conditional guard. Once reordered, all five nearby subtests (LA match, NY no-match, category filter) should pass — the LA land_stay and LA boat_rental listings were created successfully so only the routing layer is broken."
