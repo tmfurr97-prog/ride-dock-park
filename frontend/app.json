@@ -36,7 +36,7 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.furrstcamp.travel"
+      "bundleIdentifier": "com.furrstcamp.com"
     },
     "android": {
       "adaptiveIcon": {
@@ -44,7 +44,7 @@
         "backgroundColor": "#1B4332"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.furrstcamp.travel",
+      "package": "com.furrstcamp.com",
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",

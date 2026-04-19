@@ -55,12 +55,12 @@ const SECTIONS = [
   {
     title: '9. Your Rights',
     body:
-      'You may:\n• Access, correct, or delete your account data.\n• Export your data in a portable format.\n• Opt out of non-essential communications.\n• Object to or restrict certain processing (EU/UK/CA residents).\n• Lodge a complaint with a supervisory authority.\n\nTo exercise these rights, email privacy@furrstcamp.travel. We respond within 30 days.',
+      'You may:\n• Access, correct, or delete your account data.\n• Export your data in a portable format.\n• Opt out of non-essential communications.\n• Object to or restrict certain processing (EU/UK/CA residents).\n• Lodge a complaint with a supervisory authority.\n\nTo exercise these rights, email privacy@furrstcamp.com. We respond within 30 days.',
   },
   {
     title: '10. California Privacy (CCPA/CPRA)',
     body:
-      'California residents have additional rights: to know what personal information is collected, to delete it, to correct it, and to opt out of sale/share. We do not sell personal information. Requests: privacy@furrstcamp.travel.',
+      'California residents have additional rights: to know what personal information is collected, to delete it, to correct it, and to opt out of sale/share. We do not sell personal information. Requests: privacy@furrstcamp.com.',
   },
   {
     title: '11. Children',
@@ -85,7 +85,7 @@ const SECTIONS = [
   {
     title: '15. Contact Us',
     body:
-      'Privacy inquiries: privacy@furrstcamp.travel\nData Protection Officer: dpo@furrstcamp.travel\n\nEffective date: June 2025.',
+      'Privacy inquiries: privacy@furrstcamp.com\nData Protection Officer: dpo@furrstcamp.com\n\nEffective date: June 2025.',
   },
 ];
 

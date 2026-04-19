@@ -85,7 +85,7 @@ const SECTIONS = [
   {
     title: '15. Contact',
     body:
-      'Questions: legal@furrstcamp.travel. Effective date: June 2025.',
+      'Questions: legal@furrstcamp.com. Effective date: June 2025.',
   },
 ];
 
