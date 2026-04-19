@@ -325,6 +325,81 @@ metadata:
         agent: "testing"
         comment: "Both scenarios PASS. (3a) Admin POST /api/listings category=rv_rental with amenities={sleeps, length_ft} but no insurance_proof → 400 'Proof of insurance is required for RV rentals'. (3b) Same payload with amenities.insurance_proof='data:image/jpeg;base64,...' → 200 OK, response contains id + category='rv_rental'."
 
+  - task: "Listing schema accepts new Heist fields (house_rules, accepts_hourly, hourly_rate, max_rv_length)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "ListingCreate extended with house_rules (str), accepts_hourly (bool, default False), hourly_rate (float, default 0), max_rv_length (float in ft, default 0). New listing doc persists all four fields."
+      - working: true
+        agent: "testing"
+        comment: "POST /api/listings (admin) land_stay with house_rules='No smoking. Quiet hours 10pm-7am.', accepts_hourly=true, hourly_rate=15.00, max_rv_length=32.0 → 200. Response contains all four fields persisted with correct values. POST /api/listings rv_rental WITHOUT accepts_hourly (insurance_proof supplied) → 200 with accepts_hourly=false (default). 7/7 assertions pass."
+
+  - task: "Universal Host Approval — Land/Storage bookings start as awaiting_host_approval"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "POST /api/bookings now sets initial_status based on category: RV/boat → 'awaiting_insurance_review' (unchanged), land_stay/vehicle_storage → 'awaiting_host_approval' (NEW; previously 'pending'). host_approved=false added to booking doc."
+      - working: true
+        agent: "testing"
+        comment: "Created fresh admin-owned land_stay listing + fresh verified guest. POST /api/bookings with tos_accepted=true → 200, status='awaiting_host_approval' (NOT 'pending'), host_approved=false. Confirms the new universal-host-approval flow for Land/Storage categories."
+
+  - task: "PATCH /api/bookings/{id}/approve — host approves Land/Storage bookings"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoint. Only the listing host can call. Booking must be in 'awaiting_host_approval'. On success → status='confirmed', host_approved=true, host_approved_at set."
+      - working: true
+        agent: "testing"
+        comment: "All 3 scenarios PASS. (3a) Non-host guest PATCH /approve → 403 'Only the host can approve this booking'. (3b) Host (admin) PATCH /approve → 200 {status:'confirmed'}; /bookings/host confirms host_approved=true and status=confirmed in DB. (3c) Second /approve on same booking → 400 'Booking is not awaiting host approval (current status: confirmed)'."
+
+  - task: "PATCH /api/bookings/{id}/decline — host declines Land/Storage bookings"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "New endpoint. Only the listing host can call. Accepts either 'awaiting_host_approval' or 'awaiting_insurance_review'. On success → status='cancelled', cancellation_reason='declined_by_host'."
+      - working: true
+        agent: "testing"
+        comment: "All 3 scenarios PASS. Created second land_stay booking (status=awaiting_host_approval). (4b) Non-host PATCH /decline → 403 'Only the host can decline this booking'. (4c) Host PATCH /decline → 200 {status:'cancelled'}; /bookings/host confirms status='cancelled' and cancellation_reason='declined_by_host' persisted."
+
+  - task: "Hourly Booking Math — is_hourly flag on POST /api/bookings"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: "BookingCreate.is_hourly added. When is_hourly=True AND listing.accepts_hourly=True, booking bills in hours at listing.hourly_rate. Response includes unit_label ('hour'|'day'), units count, base_subtotal = rate * units. Falls back to daily when listing does not accept hourly."
+      - working: true
+        agent: "testing"
+        comment: "Verified end-to-end. (5a-c) Hourly booking on land_stay (accepts_hourly=true, hourly_rate=15) with 4-hour span → 200, unit_label='hour', units=4, base_subtotal=60.00 (15*4), is_hourly=true persisted. (5d) is_hourly=true on RV listing (accepts_hourly=false) → 400 'Invalid day range' (falls back to daily math, 4-hour span < 1 day → 400). No 500 — acceptable per spec. (5e) is_hourly omitted on land_stay with 3-day span → 200, unit_label='day', units=3, base_subtotal=135.00 (45*3). All hourly math correct. 10/10 assertions pass."
+
 test_plan:
   current_focus: []
   stuck_tasks: []

@@ -49,6 +49,39 @@ export default function Bookings() {
     }
   };
 
+  const handleApprove = async (bookingId: string) => {
+    try {
+      await api.patch(`/api/bookings/${bookingId}/approve`);
+      Alert.alert('Approved', 'Booking confirmed!');
+      loadBookings();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.detail || 'Failed to approve');
+    }
+  };
+
+  const handleDecline = async (bookingId: string) => {
+    Alert.alert(
+      'Decline Booking?',
+      'This will cancel the request. The guest will be notified.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await api.patch(`/api/bookings/${bookingId}/decline`);
+              Alert.alert('Declined', 'Booking cancelled.');
+              loadBookings();
+            } catch (e: any) {
+              Alert.alert('Error', e.response?.data?.detail || 'Failed');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleRejectInsurance = async (bookingId: string) => {
     Alert.alert(
       'Reject Insurance?',
@@ -74,8 +107,10 @@ export default function Bookings() {
 
   const renderBookingCard = ({ item }: any) => {
     const isHostTab = activeTab === 'host';
-    const needsReview =
+    const needsInsurance =
       isHostTab && item.status === 'awaiting_insurance_review';
+    const needsApproval =
+      isHostTab && item.status === 'awaiting_host_approval';
     return (
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{item.listing_title || 'Listing'}</Text>
@@ -99,7 +134,8 @@ export default function Bookings() {
         <View
           style={[
             styles.statusBadge,
-            item.status === 'awaiting_insurance_review' && styles.statusWarn,
+            (item.status === 'awaiting_insurance_review' ||
+              item.status === 'awaiting_host_approval') && styles.statusWarn,
             item.status === 'confirmed' && styles.statusOk,
             item.status === 'cancelled' && styles.statusErr,
           ]}
@@ -109,7 +145,7 @@ export default function Bookings() {
           </Text>
         </View>
 
-        {needsReview && (
+        {needsInsurance && (
           <View style={styles.insuranceBox}>
             <View style={styles.insuranceHeader}>
               <Ionicons
@@ -135,6 +171,33 @@ export default function Bookings() {
                 onPress={() => handleAcceptInsurance(item.id)}
               >
                 <Text style={styles.insuranceAcceptTxt}>Accept & Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        {needsApproval && (
+          <View style={styles.insuranceBox}>
+            <View style={styles.insuranceHeader}>
+              <Ionicons name="hand-left" size={20} color={COLORS.primary} />
+              <Text style={styles.insuranceTitle}>New Booking Request</Text>
+            </View>
+            <Text style={styles.insuranceHelp}>
+              Review this request and decide whether to accept. The guest has
+              agreed to your house rules.
+            </Text>
+            <View style={styles.insuranceBtnRow}>
+              <TouchableOpacity
+                style={[styles.insuranceBtn, styles.insuranceReject]}
+                onPress={() => handleDecline(item.id)}
+              >
+                <Text style={styles.insuranceRejectTxt}>Decline</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.insuranceBtn, styles.insuranceAccept]}
+                onPress={() => handleApprove(item.id)}
+              >
+                <Text style={styles.insuranceAcceptTxt}>Approve</Text>
               </TouchableOpacity>
             </View>
           </View>

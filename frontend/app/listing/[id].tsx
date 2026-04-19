@@ -224,6 +224,39 @@ export default function ListingDetail() {
             <Text style={styles.description}>{listing.description}</Text>
           </View>
 
+          {/* House Rules */}
+          {listing.house_rules ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>House Rules</Text>
+              <View style={styles.houseRulesBox}>
+                <Ionicons name="document-text" size={20} color={COLORS.primary} />
+                <Text style={styles.houseRulesText}>{listing.house_rules}</Text>
+              </View>
+            </View>
+          ) : null}
+
+          {/* Hourly / Max RV Length Badges */}
+          {(listing.accepts_hourly || listing.max_rv_length > 0) && (
+            <View style={styles.badgeRow}>
+              {listing.accepts_hourly ? (
+                <View style={styles.featBadge}>
+                  <Ionicons name="time" size={14} color={COLORS.primary} />
+                  <Text style={styles.featBadgeText}>
+                    Hourly: ${listing.hourly_rate}/hr
+                  </Text>
+                </View>
+              ) : null}
+              {listing.max_rv_length > 0 ? (
+                <View style={styles.featBadge}>
+                  <Ionicons name="resize" size={14} color={COLORS.primary} />
+                  <Text style={styles.featBadgeText}>
+                    Max {listing.max_rv_length} ft
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
           {/* Category-specific Amenities */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Details</Text>
@@ -702,5 +735,43 @@ const styles = StyleSheet.create({
     color: COLORS.primary,
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+  houseRulesBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: SPACING.sm,
+    backgroundColor: '#F0F7F0',
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
+    padding: SPACING.md,
+    borderRadius: 6,
+  },
+  houseRulesText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+    color: COLORS.text,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    flexWrap: 'wrap',
+  },
+  featBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SPACING.xs,
+    backgroundColor: '#F0F7F0',
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: SPACING.xs,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
+  featBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
 });

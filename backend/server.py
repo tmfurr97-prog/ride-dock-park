@@ -133,6 +133,11 @@ class ListingCreate(BaseModel):
     images: List[str]  # base64 images
     amenities: Dict[str, Any]
     is_long_term: Optional[bool] = False
+    # Marketplace features (stolen ethically from competitors 😈)
+    house_rules: Optional[str] = ""
+    accepts_hourly: Optional[bool] = False
+    hourly_rate: Optional[float] = 0.0
+    max_rv_length: Optional[float] = 0.0  # in feet; 0 = not applicable
 
 class ListingResponse(BaseModel):
     id: str
@@ -154,6 +159,7 @@ class BookingCreate(BaseModel):
     end_date: str
     selected_add_ons: Optional[List[str]] = []  # e.g., ["golf_cart", "trailer", "bimini_top"]
     tos_accepted: bool = False
+    is_hourly: Optional[bool] = False  # if True, end_date - start_date is measured in hours
 
 class BookingResponse(BaseModel):
     id: str
@@ -481,6 +487,10 @@ async def create_listing(
         "images": listing.images,
         "amenities": listing.amenities,
         "is_long_term": listing.is_long_term or False,
+        "house_rules": (listing.house_rules or "").strip(),
+        "accepts_hourly": bool(listing.accepts_hourly),
+        "hourly_rate": float(listing.hourly_rate or 0),
+        "max_rv_length": float(listing.max_rv_length or 0),
         "status": "active",
         "created_at": datetime.utcnow().isoformat()
     }
@@ -597,15 +607,26 @@ async def create_booking(
         if listing["owner_id"] == current_user["_id"]:
             raise HTTPException(status_code=400, detail="Cannot book your own listing")
         
-        # Calculate base rental price
+        # Calculate base rental price (supports hourly OR daily)
         start = datetime.fromisoformat(booking.start_date)
         end = datetime.fromisoformat(booking.end_date)
-        days = (end - start).days
         
-        if days <= 0:
-            raise HTTPException(status_code=400, detail="Invalid date range")
+        is_hourly = bool(booking.is_hourly) and listing.get("accepts_hourly", False)
+        unit_rate = float(listing.get("hourly_rate", 0)) if is_hourly else listing["price"]
+        unit_label = "hour" if is_hourly else "day"
         
-        base_subtotal = listing["price"] * days
+        if is_hourly:
+            units = max(0, int((end - start).total_seconds() // 3600))
+        else:
+            units = (end - start).days
+        
+        if units <= 0:
+            raise HTTPException(status_code=400, detail=f"Invalid {unit_label} range")
+        if is_hourly and unit_rate <= 0:
+            raise HTTPException(status_code=400, detail="This listing does not accept hourly bookings")
+        
+        days = units  # keep variable name for downstream compat; represents billable periods
+        base_subtotal = unit_rate * units
         
         # Add-ons (owner-priced, flat 10% platform fee on each)
         amenities = listing.get("amenities", {}) or {}
@@ -648,10 +669,14 @@ async def create_booking(
         total_price = base_subtotal + add_ons_subtotal + security_deposit
         host_payout = (base_subtotal + add_ons_subtotal) - platform_fee_total
         
-        # Insurance gate: RV and Boat rentals must be accepted by host before confirmed
+        # Universal host approval: every booking starts pending review.
+        # RV + Boat use "awaiting_insurance_review"; Land + Storage use "awaiting_host_approval".
         category = listing.get("category", "")
         requires_insurance_review = category in ("rv_rental", "boat_rental")
-        initial_status = "awaiting_insurance_review" if requires_insurance_review else "pending"
+        if requires_insurance_review:
+            initial_status = "awaiting_insurance_review"
+        else:
+            initial_status = "awaiting_host_approval"
         
         new_booking = {
             "listing_id": booking.listing_id,
@@ -659,6 +684,9 @@ async def create_booking(
             "guest_name": current_user["name"],
             "host_id": listing["owner_id"],
             "category": category,
+            "is_hourly": is_hourly,
+            "unit_label": unit_label,
+            "units": units,
             "start_date": booking.start_date,
             "end_date": booking.end_date,
             "days": days,
@@ -675,6 +703,7 @@ async def create_booking(
             "status": initial_status,
             "insurance_required": requires_insurance_review,
             "insurance_accepted": False,
+            "host_approved": False,
             "tos_accepted": True,
             "tos_accepted_at": datetime.utcnow().isoformat(),
             "created_at": datetime.utcnow().isoformat()
@@ -838,6 +867,65 @@ async def reject_insurance(
         }}
     )
     return {"message": "Insurance rejected, booking cancelled", "status": "cancelled"}
+
+@app.patch("/api/bookings/{booking_id}/approve")
+async def approve_booking(
+    booking_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Host approves a pending booking (Land / Storage / hourly flow)."""
+    try:
+        booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("host_id") != current_user["_id"]:
+        raise HTTPException(status_code=403, detail="Only the host can approve this booking")
+    if booking.get("status") != "awaiting_host_approval":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Booking is not awaiting host approval (current status: {booking.get('status')})"
+        )
+    await db.bookings.update_one(
+        {"_id": ObjectId(booking_id)},
+        {"$set": {
+            "host_approved": True,
+            "host_approved_at": datetime.utcnow().isoformat(),
+            "status": "confirmed"
+        }}
+    )
+    return {"message": "Booking approved", "status": "confirmed"}
+
+@app.patch("/api/bookings/{booking_id}/decline")
+async def decline_booking(
+    booking_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Host declines a pending booking."""
+    try:
+        booking = await db.bookings.find_one({"_id": ObjectId(booking_id)})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("host_id") != current_user["_id"]:
+        raise HTTPException(status_code=403, detail="Only the host can decline this booking")
+    if booking.get("status") not in ("awaiting_host_approval", "awaiting_insurance_review"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Booking cannot be declined (current status: {booking.get('status')})"
+        )
+    await db.bookings.update_one(
+        {"_id": ObjectId(booking_id)},
+        {"$set": {
+            "host_approved": False,
+            "status": "cancelled",
+            "cancelled_at": datetime.utcnow().isoformat(),
+            "cancellation_reason": "declined_by_host"
+        }}
+    )
+    return {"message": "Booking declined", "status": "cancelled"}
 
 # =====================
 # MESSAGES ENDPOINTS

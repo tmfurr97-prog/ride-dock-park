@@ -89,6 +89,12 @@ export default function CreateListing() {
   const [golfCartAvailable, setGolfCartAvailable] = useState(false);
   const [golfCartPrice, setGolfCartPrice] = useState('');
 
+  // Universal marketplace features (all categories)
+  const [houseRules, setHouseRules] = useState('');
+  const [acceptsHourly, setAcceptsHourly] = useState(false);
+  const [hourlyRate, setHourlyRate] = useState('');
+  const [maxRvLength, setMaxRvLength] = useState('');
+
   const requestPermissions = async () => {
     const { status: cameraStatus } = await ImagePicker.requestCameraPermissionsAsync();
     const { status: galleryStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -340,6 +346,10 @@ export default function CreateListing() {
         images,
         amenities,
         is_long_term: isLongTerm,
+        house_rules: houseRules.trim(),
+        accepts_hourly: acceptsHourly,
+        hourly_rate: acceptsHourly ? parseFloat(hourlyRate || '0') : 0,
+        max_rv_length: maxRvLength ? parseFloat(maxRvLength) : 0,
       });
 
       Alert.alert('Success', 'Listing created successfully!', [
@@ -1024,6 +1034,84 @@ export default function CreateListing() {
 
           {(selectedCategory === 'rv_rental' || selectedCategory === 'land_stay') &&
             renderGolfCartAddOn()}
+
+          {/* UNIVERSAL MARKETPLACE FEATURES */}
+          <View style={styles.section}>
+            <Text style={[styles.label, { fontSize: 18, marginTop: SPACING.md }]}>
+              Booking Preferences
+            </Text>
+          </View>
+
+          <View style={styles.section}>
+            <Text style={styles.label}>House Rules (optional)</Text>
+            <TextInput
+              style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
+              value={houseRules}
+              onChangeText={setHouseRules}
+              placeholder="e.g., No smoking. Quiet hours 10pm-7am. Pets OK with deposit. Check-in after 3pm."
+              placeholderTextColor={COLORS.textLight}
+              multiline
+              numberOfLines={4}
+            />
+            <Text style={styles.helpText}>
+              Guests will see these rules before booking and must agree to them.
+            </Text>
+          </View>
+
+          {(selectedCategory === 'land_stay' || selectedCategory === 'vehicle_storage') && (
+            <View style={styles.section}>
+              <Text style={styles.label}>Max RV Length (ft)</Text>
+              <TextInput
+                style={styles.input}
+                value={maxRvLength}
+                onChangeText={setMaxRvLength}
+                placeholder="e.g., 32 (leave blank if no limit)"
+                placeholderTextColor={COLORS.textLight}
+                keyboardType="decimal-pad"
+              />
+              <Text style={styles.helpText}>
+                Prevents oversized rigs from booking. Most Class A are 30-45 ft.
+              </Text>
+            </View>
+          )}
+
+          <View style={styles.section}>
+            <Text style={styles.label}>Accept Hourly Bookings?</Text>
+            <TouchableOpacity
+              style={styles.longTermToggle}
+              onPress={() => setAcceptsHourly(!acceptsHourly)}
+            >
+              <View style={styles.toggleLeft}>
+                <Ionicons
+                  name={acceptsHourly ? 'checkbox' : 'square-outline'}
+                  size={24}
+                  color={COLORS.primary}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.toggleLabel}>Allow hourly rentals</Text>
+                  <Text style={styles.toggleSubtext}>
+                    Great for day-use (brewery parking, dock visits, short-stay storage)
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+            {acceptsHourly && (
+              <View style={{ marginTop: SPACING.sm }}>
+                <Text style={styles.label}>Hourly Rate (USD/hour)</Text>
+                <View style={styles.priceInput}>
+                  <Text style={styles.priceSymbol}>$</Text>
+                  <TextInput
+                    style={[styles.input, styles.priceField]}
+                    value={hourlyRate}
+                    onChangeText={setHourlyRate}
+                    placeholder="15.00"
+                    placeholderTextColor={COLORS.textLight}
+                    keyboardType="decimal-pad"
+                  />
+                </View>
+              </View>
+            )}
+          </View>
 
           {renderImagePicker()}
 
