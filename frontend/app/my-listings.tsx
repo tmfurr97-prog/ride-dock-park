@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../constants/theme';
 import api from '../services/api';
+import { confirm } from '../utils/dialog';
 
 export default function MyListings() {
   const router = useRouter();
@@ -35,27 +36,22 @@ export default function MyListings() {
     }
   };
 
-  const handleDelete = (listingId: string, title: string) => {
-    Alert.alert(
+  const handleDelete = async (listingId: string, title: string) => {
+    const ok = await confirm(
       'Delete Listing',
       `Are you sure you want to delete "${title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.delete(`/api/listings/${listingId}`);
-              Alert.alert('Success', 'Listing deleted');
-              loadListings();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete listing');
-            }
-          },
-        },
-      ]
+      'Delete',
+      'Cancel',
+      true
     );
+    if (!ok) return;
+    try {
+      await api.delete(`/api/listings/${listingId}`);
+      Alert.alert('Success', 'Listing deleted');
+      loadListings();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete listing');
+    }
   };
 
   const renderListingCard = ({ item }: any) => (

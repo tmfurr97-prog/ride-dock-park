@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,27 +14,17 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import { useAuthStore } from '../../store/authStore';
 import LegalFooter from '../../components/LegalFooter';
+import { confirm } from '../../utils/dialog';
 
 export default function Profile() {
   const router = useRouter();
   const { user, logout } = useAuthStore();
 
-  const handleLogout = () => {
-    Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            await logout();
-            router.replace('/(auth)/login');
-          },
-        },
-      ]
-    );
+  const handleLogout = async () => {
+    const ok = await confirm('Logout', 'Are you sure you want to logout?', 'Logout', 'Cancel', true);
+    if (!ok) return;
+    await logout();
+    router.replace('/(auth)/login');
   };
 
   const menuItems = [

@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY, SHADOWS } from '../../constants/theme';
 import api from '../../services/api';
+import { confirm } from '../../utils/dialog';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -57,49 +58,33 @@ export default function AdminDashboard() {
   };
 
   const handleBanUser = async (userId: string, userName: string, currentlyBanned: boolean) => {
-    Alert.alert(
+    const ok = await confirm(
       currentlyBanned ? 'Unban User' : 'Ban User',
       `Are you sure you want to ${currentlyBanned ? 'unban' : 'ban'} ${userName}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: currentlyBanned ? 'Unban' : 'Ban',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.patch(`/api/admin/users/${userId}/ban`, { banned: !currentlyBanned });
-              Alert.alert('Success', `User ${currentlyBanned ? 'unbanned' : 'banned'}`);
-              loadData();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to update user');
-            }
-          },
-        },
-      ]
+      currentlyBanned ? 'Unban' : 'Ban',
+      'Cancel',
+      !currentlyBanned
     );
+    if (!ok) return;
+    try {
+      await api.patch(`/api/admin/users/${userId}/ban`, { banned: !currentlyBanned });
+      Alert.alert('Success', `User ${currentlyBanned ? 'unbanned' : 'banned'}`);
+      loadData();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update user');
+    }
   };
 
   const handleDeleteListing = async (listingId: string, title: string) => {
-    Alert.alert(
-      'Delete Listing',
-      `Delete "${title}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.delete(`/api/admin/listings/${listingId}`);
-              Alert.alert('Success', 'Listing deleted');
-              loadData();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to delete listing');
-            }
-          },
-        },
-      ]
-    );
+    const ok = await confirm('Delete Listing', `Delete "${title}"?`, 'Delete', 'Cancel', true);
+    if (!ok) return;
+    try {
+      await api.delete(`/api/admin/listings/${listingId}`);
+      Alert.alert('Success', 'Listing deleted');
+      loadData();
+    } catch (error) {
+      Alert.alert('Error', 'Failed to delete listing');
+    }
   };
 
   const renderStats = () => (

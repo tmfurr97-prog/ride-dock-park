@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, TYPOGRAPHY } from '../../constants/theme';
 import api from '../../services/api';
 import LegalFooter from '../../components/LegalFooter';
+import { confirm } from '../../utils/dialog';
 
 export default function Bookings() {
   const [guestBookings, setGuestBookings] = useState<any[]>([]);
@@ -60,49 +61,39 @@ export default function Bookings() {
   };
 
   const handleDecline = async (bookingId: string) => {
-    Alert.alert(
+    const ok = await confirm(
       'Decline Booking?',
       'This will cancel the request. The guest will be notified.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Decline',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.patch(`/api/bookings/${bookingId}/decline`);
-              Alert.alert('Declined', 'Booking cancelled.');
-              loadBookings();
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.detail || 'Failed');
-            }
-          },
-        },
-      ]
+      'Decline',
+      'Cancel',
+      true
     );
+    if (!ok) return;
+    try {
+      await api.patch(`/api/bookings/${bookingId}/decline`);
+      Alert.alert('Declined', 'Booking cancelled.');
+      loadBookings();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.detail || 'Failed');
+    }
   };
 
   const handleRejectInsurance = async (bookingId: string) => {
-    Alert.alert(
+    const ok = await confirm(
       'Reject Insurance?',
       'This will cancel the booking. The guest will be notified.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.patch(`/api/bookings/${bookingId}/reject-insurance`);
-              Alert.alert('Rejected', 'Booking cancelled.');
-              loadBookings();
-            } catch (e: any) {
-              Alert.alert('Error', e.response?.data?.detail || 'Failed');
-            }
-          },
-        },
-      ]
+      'Reject',
+      'Cancel',
+      true
     );
+    if (!ok) return;
+    try {
+      await api.patch(`/api/bookings/${bookingId}/reject-insurance`);
+      Alert.alert('Rejected', 'Booking cancelled.');
+      loadBookings();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.detail || 'Failed');
+    }
   };
 
   const renderBookingCard = ({ item }: any) => {
