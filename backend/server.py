@@ -690,59 +690,6 @@ async def get_listings(
     
     return listings
 
-@app.get("/api/listings/{listing_id}")
-async def get_listing(listing_id: str):
-    try:
-        listing = await db.listings.find_one({"_id": ObjectId(listing_id)})
-        if not listing:
-            raise HTTPException(status_code=404, detail="Listing not found")
-        
-        listing["id"] = str(listing["_id"])
-        listing.pop("_id", None)
-        return listing
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid listing ID")
-
-@app.get("/api/listings/user/me")
-async def get_my_listings(
-    current_user: dict = Depends(get_current_user),
-    limit: int = 50
-):
-    listings = []
-    projection = {"images": {"$slice": 1}}  # Only first image for list view
-    async for listing in db.listings.find({"owner_id": current_user["_id"]}, projection).sort("created_at", -1).limit(limit):
-        listing["id"] = str(listing["_id"])
-        listing.pop("_id", None)
-        listings.append(listing)
-    
-    return listings
-
-@app.delete("/api/listings/{listing_id}")
-async def delete_listing(listing_id: str, current_user: dict = Depends(get_current_user)):
-    try:
-        listing = await db.listings.find_one({"_id": ObjectId(listing_id)})
-        if not listing:
-            raise HTTPException(status_code=404, detail="Listing not found")
-        
-        if listing["owner_id"] != current_user["_id"]:
-            raise HTTPException(status_code=403, detail="Not authorized")
-        
-        await db.listings.update_one(
-            {"_id": ObjectId(listing_id)},
-            {"$set": {"status": "deleted"}}
-        )
-        
-        return {"message": "Listing deleted"}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail="Invalid listing ID")
-
-# =====================
-# BOOKINGS ENDPOINTS
-# =====================
-# FAVORITES ENDPOINTS
-# =====================
 import math
 
 def haversine_miles(lat1, lon1, lat2, lon2):
@@ -782,6 +729,60 @@ async def nearby_listings(
             results.append(listing)
     results.sort(key=lambda x: x.get("distance_miles", 9999))
     return {"listings": results, "count": len(results)}
+
+@app.get("/api/listings/user/me")
+async def get_my_listings(
+    current_user: dict = Depends(get_current_user),
+    limit: int = 50
+):
+    listings = []
+    projection = {"images": {"$slice": 1}}  # Only first image for list view
+    async for listing in db.listings.find({"owner_id": current_user["_id"]}, projection).sort("created_at", -1).limit(limit):
+        listing["id"] = str(listing["_id"])
+        listing.pop("_id", None)
+        listings.append(listing)
+    
+    return listings
+
+@app.get("/api/listings/{listing_id}")
+async def get_listing(listing_id: str):
+    try:
+        listing = await db.listings.find_one({"_id": ObjectId(listing_id)})
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        
+        listing["id"] = str(listing["_id"])
+        listing.pop("_id", None)
+        return listing
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid listing ID")
+
+@app.delete("/api/listings/{listing_id}")
+async def delete_listing(listing_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        listing = await db.listings.find_one({"_id": ObjectId(listing_id)})
+        if not listing:
+            raise HTTPException(status_code=404, detail="Listing not found")
+        
+        if listing["owner_id"] != current_user["_id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+        
+        await db.listings.update_one(
+            {"_id": ObjectId(listing_id)},
+            {"$set": {"status": "deleted"}}
+        )
+        
+        return {"message": "Listing deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid listing ID")
+
+# =====================
+# BOOKINGS ENDPOINTS
+# =====================
+# FAVORITES ENDPOINTS
+# =====================
 
 @app.post("/api/favorites/{listing_id}")
 async def add_favorite(
